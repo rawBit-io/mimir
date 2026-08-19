@@ -23,20 +23,23 @@ async function render() {
   );
 }
 
-test("server-renders the Mimir compiler shell", async () => {
+test("server-renders the Mimir policy terminal shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>Mimir — Bitcoin Vault Policy Compiler<\/title>/i);
-  assert.match(html, /VAULT POLICY COMPILER/);
-  assert.match(html, /A vault that outlives the app\./);
-  assert.match(html, /No network access/);
-  assert.match(html, /Pre-mainnet preview/);
-  assert.match(html, /Public data only/);
+  assert.match(html, /<title>MIMIR \/\/ POLICY TERMINAL<\/title>/);
+  assert.match(html, /MIMIR \/\/ POLICY TERMINAL/);
+  assert.match(html, /COMPOSE K-OF-N VAULTS · PUBLIC KEYS ONLY/);
+  assert.match(html, /COMPILE POLICY/);
   assert.match(html, /http:\/\/localhost\/og\.png/);
+  assert.match(html, /noindex/);
   assert.match(html, /connect-src &#x27;none&#x27;/);
+  assert.doesNotMatch(
+    html,
+    /Step 1|Network &amp; policy|Add public identities|Set the boundary|fingerprint|xpub/i,
+  );
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
@@ -47,11 +50,12 @@ test("removes the disposable starter and external runtime assets", async () => {
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /compilePolicy/);
-  assert.match(page, /createCapsule/);
+  assert.match(page, /MIMIR \/\/ POLICY TERMINAL/);
+  assert.match(page, /COMPOSE K-OF-N VAULTS · PUBLIC KEYS ONLY/);
+  assert.doesNotMatch(page, /const STEPS|activeStep|fingerprint|xpub/i);
   assert.match(layout, /connect-src 'none'/);
+  assert.match(layout, /index: false, follow: false/);
   assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview", import.meta.url)));
 });
-
