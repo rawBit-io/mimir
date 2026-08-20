@@ -23,22 +23,25 @@ async function render() {
   );
 }
 
-test("server-renders the Mimir policy terminal shell", async () => {
+test("server-renders the live Mimir script builder", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>MIMIR \/\/ POLICY TERMINAL<\/title>/);
-  assert.match(html, /MIMIR \/\/ POLICY TERMINAL/);
-  assert.match(html, /COMPOSE K-OF-N VAULTS · PUBLIC KEYS ONLY/);
-  assert.match(html, /COMPILE POLICY/);
+  assert.match(html, /<title>Mimir — Bitcoin Script Builder<\/title>/);
+  assert.match(html, />MIMIR</);
+  assert.match(html, /Build a Bitcoin recovery script\./);
+  assert.match(html, /Public keys only · updates live · offline/);
+  assert.match(html, /LIVE BITCOIN SCRIPT/);
+  assert.match(html, /ADD KEY/);
+  assert.match(html, /Technical details/);
   assert.match(html, /http:\/\/localhost\/og\.png/);
   assert.match(html, /noindex/);
   assert.match(html, /connect-src &#x27;none&#x27;/);
   assert.doesNotMatch(
     html,
-    /Step 1|Network &amp; policy|Add public identities|Set the boundary|fingerprint|xpub/i,
+    /MIMIR \/\/ POLICY TERMINAL|COMPILE POLICY|PUBLIC KEY REGISTRY|ACTIVE DROP|DRAG|DROP|Step 1|fingerprint|xpub/i,
   );
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
@@ -50,9 +53,17 @@ test("removes the disposable starter and external runtime assets", async () => {
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /MIMIR \/\/ POLICY TERMINAL/);
-  assert.match(page, /COMPOSE K-OF-N VAULTS · PUBLIC KEYS ONLY/);
-  assert.doesNotMatch(page, /const STEPS|activeStep|fingerprint|xpub/i);
+  assert.match(page, /Build a Bitcoin recovery script\./);
+  assert.match(page, /Public keys only · updates live · offline/);
+  assert.match(page, /LIVE BITCOIN SCRIPT/);
+  assert.match(page, /ADD KEY/);
+  assert.match(page, /Technical details/);
+  assert.match(page, /canonical_manifest/);
+  assert.match(page, /value === "regtest" \|\| value === "signet"/);
+  assert.doesNotMatch(
+    page,
+    /MIMIR \/\/ POLICY TERMINAL|COMPILE POLICY|PUBLIC KEY REGISTRY|draggable|onDragStart|onDrop|activeTarget|fingerprint|xpub|crypto\.randomUUID/i,
+  );
   assert.match(layout, /connect-src 'none'/);
   assert.match(layout, /index: false, follow: false/);
   assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview/);

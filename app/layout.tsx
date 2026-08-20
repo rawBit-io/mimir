@@ -14,28 +14,28 @@ export async function generateMetadata(): Promise<Metadata> {
   const origin = `${protocol}://${host}`;
 
   return {
-    title: "MIMIR // POLICY TERMINAL",
+    title: "Mimir — Bitcoin Script Builder",
     description:
-      "Compose K-of-N Bitcoin vault policies from direct public keys in a one-page offline terminal.",
+      "Build a Bitcoin recovery script from public keys in a live, offline one-page interface.",
     applicationName: "Mimir",
     robots: { index: false, follow: false, nocache: true },
     openGraph: {
-      title: "MIMIR // POLICY TERMINAL",
-      description: "Compose K-of-N vaults · Public keys only · Offline by design.",
+      title: "Mimir — Bitcoin Script Builder",
+      description: "Public keys only · Updates live · Offline.",
       type: "website",
       images: [
         {
           url: `${origin}/og.png`,
           width: 1731,
           height: 909,
-          alt: "Mimir public-key Bitcoin policy terminal",
+          alt: "Mimir Bitcoin recovery script builder",
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: "MIMIR // POLICY TERMINAL",
-      description: "Compose K-of-N vaults · Public keys only · Offline by design.",
+      title: "Mimir — Bitcoin Script Builder",
+      description: "Public keys only · Updates live · Offline.",
       images: [`${origin}/og.png`],
     },
   };

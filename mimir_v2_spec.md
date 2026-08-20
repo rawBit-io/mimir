@@ -54,9 +54,11 @@ A compiler request MUST have this shape:
 ```
 
 `network` MUST be exactly `bitcoin`, `signet`, or `regtest`. The compiler MUST
-reject other formats, versions, template IDs, or networks.
+reject other formats, versions, template IDs, or networks. The pre-mainnet web
+interface MUST expose only `regtest` and `signet`; `bitcoin` remains a compiler
+capability for compatibility, deterministic vectors, and non-UI callers.
 
-## 3. Public-key registry
+## 3. Unified signer list and compiler registry
 
 Each `keys` entry MUST contain:
 
@@ -84,6 +86,12 @@ Each `keys` entry MUST contain:
 For deterministic export, registry entries MUST be ordered lexicographically
 by normalized public key, with ID as the tie-breaker.
 
+The web interface MUST present these entries as one unified, directly editable
+signer list. Every visible row MUST include its label, complete public key, and
+an `OWNER` or `HEIR` role marker. Adding, editing, deleting, or changing the
+role of a row MUST update the in-memory request. The interface MUST NOT require
+users to move cards between separate registries or use drag and drop.
+
 ## 4. Group assignment and thresholds
 
 The `owner` and `heirs` groups MUST each contain 1–10 unique registry key IDs.
@@ -93,11 +101,11 @@ both groups.
 Each `threshold` MUST be an integer `K` satisfying `1 <= K <= N`, where `N` is
 the number of keys assigned to that group.
 
-The order in which keys are added, clicked, or dragged has no policy meaning.
-Within each group, the compiler MUST sort normalized compressed public keys in
-ascending lexicographic byte/hex order before constructing Miniscript. The
-same registry and assignments MUST therefore compile identically despite UI or
-JSON input ordering.
+The order in which signer rows appear has no policy meaning. Within each group,
+the compiler MUST sort normalized compressed public keys in ascending
+lexicographic byte/hex order before constructing Miniscript. The same registry
+and assignments MUST therefore compile identically despite UI or JSON input
+ordering.
 
 Examples include 1-of-1 owners plus 1-of-10 heirs, 2-of-3 owners plus 5-of-10
 heirs, and the maximum 10-of-10 owners plus 10-of-10 heirs.
@@ -190,26 +198,52 @@ descriptor body and checksum, script artifacts, and address. JSON
 canonicalization MUST be deterministic, and the reported policy hash MUST be
 `SHA256(UTF8(canonical_manifest))`.
 
-The one-page UI MUST offer a JSON download only for the latest successful
-compile. The export MUST contain the complete v2 policy manifest; it MUST NOT
-contain private material or transient drag/UI state.
+The one-page UI MUST keep exact Miniscript and Bitcoin Script ASM visible in the
+live result. The checksummed descriptor, witness-script hex and size, witness
+program, scriptPubKey, address, manifest hash, invariants, and warnings MAY be
+grouped under a collapsed **Technical details** disclosure to keep the primary
+interface compact.
 
-## 8. One-page composer behavior
+The UI MUST offer a JSON download whenever the current live policy is valid and
+MUST remove or disable that export as soon as the current input becomes
+incomplete or invalid. The export MUST contain the complete v2 policy manifest;
+it MUST NOT contain private material or transient presentation state.
 
-The default v2 UI MUST keep the registry, owner group, heir group, locks,
-thresholds, compile action, validation feedback, and results on one page. A `+`
-control MUST add a registry key. Users MAY assign or rearrange keys by drag and
-drop, but drag and drop MUST NOT be the only path.
+## 8. One-page live builder behavior
 
-Click controls MUST be the authoritative accessible assignment path and MUST
-provide the same semantics as dragging. All essential actions SHOULD be
-keyboard operable, have visible focus, and expose accessible names. Reordering
-MUST NOT change canonical output.
+The default v2 interface MUST keep the signer list, two group rules, validation
+feedback, and live script result on one page. Its primary heading and status
+copy identify it as a Bitcoin recovery-script builder that accepts public keys
+only, updates live, and operates offline.
 
-Compilation MUST occur only after an explicit user action. Invalid input MUST
-produce a specific error and MUST NOT expose partial output as a valid policy.
-Changing policy input after compilation SHOULD make it clear that the previous
-result is stale until recompiled.
+The signer list MUST be the single place to add and edit participants. An
+**ADD KEY** control MUST append an editable row. Each row MUST provide an
+accessible `OWNER`/`HEIR` role control and a remove control. The interface MUST
+NOT depend on drag and drop, a selected drop target, a wizard, or separate group
+card collections.
+
+Exactly two compact rule controls MUST be presented: one for owners and one for
+heirs. Each MUST expose the current `K-of-N` threshold and exact UTC unlock
+value. Threshold bounds MUST track the number of rows assigned to that role.
+The only network choices exposed by this interface MUST be regtest and signet.
+
+Compilation MUST be dynamic. Every change to a signer row, role, threshold,
+lock, or network MUST attempt to construct and validate the current request;
+there MUST be no explicit compile action. When the request is valid, the
+**LIVE BITCOIN SCRIPT** area MUST show the exact Miniscript and Bitcoin Script
+ASM for that current request. Advanced artifacts MAY remain collapsed under
+**Technical details**.
+
+When input is incomplete or invalid, the live result MUST show a placeholder or
+specific actionable validation message. It MUST NOT display an earlier result,
+partial artifact, address, export, or success state as though it described the
+current input. Returning to valid input MUST deterministically restore current
+output without another action.
+
+All essential actions MUST be keyboard operable, have visible focus, expose
+accessible names, and use touch-friendly targets. The layout SHOULD remain
+usable at a 320 CSS-pixel viewport width. Reordering rows MUST NOT change
+canonical output.
 
 ## 9. Fail-closed validation
 
