@@ -1,68 +1,61 @@
 # Mimir
 
-Mimir is a one-page, offline Bitcoin recovery-script builder. Add direct
-compressed public keys to one unified list, visually mark each signer as
-`OWNER` or `HEIR`, then construct one independent spending rule at a time. The
-exact Miniscript and Bitcoin Script ASM update live as rules change.
+Mimir is a one-page, offline builder for a deliberately small Bitcoin recovery
+template. Add up to five compressed public keys, assign each signer to the
+functional **Primary** or **Recovery** group, choose the immediate Primary
+threshold, and set the staged Recovery dates. The exact P2WSH Miniscript,
+Bitcoin Script ASM, and address update live.
 
-There is no compile button or wizard. The **NEW RULE** area has a block palette
-and rule canvas; blocks can be dragged into the canvas or clicked for keyboard
-and touch use. Incomplete or invalid input produces an actionable placeholder
-instead of policy output.
+## The 5×5 template
 
-## Current policy model
-
-Each rule is built independently:
-
-1. Drag one or more key blocks into the rule canvas.
-2. For multiple keys, add the single **Multisig** block and set K-of-N inside it.
-3. Optionally add the single **Time delay** block and choose a future date. Delayed
-   rules use `00:00:00 UTC` on that date; Bitcoin median time past can make
-   actual eligibility later.
-4. Select **ADD RULE**.
-
-Multisig and Time delay can each appear only once in a draft rule. Removing a
-block returns it to the palette.
-
-`OWNER` and `HEIR` marks are visual labels only. They do not change spending
-conditions; a key is delayed only when its rule enables **Time delay**.
-
-The final policy is an OR across every saved rule:
+Every policy has one immediate Primary path and one Recovery path per Recovery
+signer, for no more than five signers and five paths in total:
 
 ```text
-Rule 1 OR Rule 2 OR ... OR Rule N
+Primary:  P of N primary signers can spend now
+Recovery: M of M recovery signers can spend from date 1
+          M-1 of M recovery signers can spend from date 2
+          ...
+          1 of M recovery signers can spend from date M
 ```
 
-Mimir supports up to 20 registered keys, 10 rules, and 10 keys in a rule. A key
-may appear in at most one rule because duplicating keys across independent
-branches can violate Miniscript sanity. Every multisig threshold must satisfy
-`1 <= K <= N`.
+Recovery dates are absolute UTC calendar dates at `00:00:00`, must be strictly
+increasing, and remain available after they become active. Primary and Recovery
+are disjoint signer groups; the labels change real spending conditions.
 
-The web interface provides:
+For example, one Primary signer plus four Recovery signers produces five paths:
+the Primary path now, then 4-of-4, 3-of-4, 2-of-4, and 1-of-4 Recovery paths at
+four later dates. Thresholds in the recovery ladder are fixed by the template,
+which removes the free-form rule-combination problem.
 
-- one editable signer list with owner/heir visual marks;
-- a draggable **NEW RULE** block palette and canvas with optional multisig and
-  calendar-date delay;
-- a **YOUR RULES** list and live exact Miniscript/Bitcoin Script ASM;
-- regtest and signet selection;
-- collapsed **Technical details** containing the checksummed descriptor,
-  witness script, scriptPubKey, address, invariants, warnings, and manifest
-  hash; and
-- JSON manifest export whenever the current policy is valid.
+The interface provides:
 
-Every key must be a canonical 33-byte compressed secp256k1 public key encoded
-as 66 hexadecimal characters and beginning with `02` or `03`. Mimir accepts
-public data only—never private keys, seed phrases, extended keys, fingerprints,
-or derivation paths.
+- one editable signer list containing only labels and compressed public keys;
+- functional Primary/Recovery assignment and a Primary P-of-N selector;
+- a Recovery timeline with one UTC date per automatically derived threshold;
+- optional public demo keys for an instant example, clearly marked unsafe and
+  blocked from JSON export;
+- live exact Miniscript, Bitcoin Script ASM, P2WSH address, descriptor, script
+  bytes, invariants, warnings, and canonical JSON export; and
+- Regtest and Signet selection.
 
-The v3 compiler retains `bitcoin`, `signet`, and `regtest` network support for
-deterministic compatibility, while the pre-mainnet web UI intentionally exposes
-only regtest and signet. The immutable v1 and v2 compilers and specifications
-remain available for compatibility and regression coverage.
+Every key is trimmed and normalized to a 33-byte compressed secp256k1 public
+key encoded as 66 lowercase hexadecimal characters and beginning with `02` or
+`03`. Mimir accepts public data only—never private keys, seed phrases, extended
+keys, fingerprints, or derivation paths.
 
-The concise implemented contract is [`mimir_v3_spec.md`](mimir_v3_spec.md).
-Legacy contracts remain in [`mimir_spec.md`](mimir_spec.md) and
-[`mimir_v2_spec.md`](mimir_v2_spec.md).
+The compiler canonicalizes keys and inputs deterministically, requires sane
+Miniscript, and exhaustively compares the intended template with the generated
+Miniscript's symbolic satisfactions for every signer subset and relevant time
+boundary. With at most five signers and four Recovery locktimes, that check
+covers at most 256 signer/time cases. It is a defense against compiler mistakes,
+not a substitute for independent review or a recovery rehearsal.
+
+The concise current contract is [`mimir_v4_spec.md`](mimir_v4_spec.md). Earlier
+implemented contracts remain available as
+[`mimir_v3_spec.md`](mimir_v3_spec.md),
+[`mimir_v2_spec.md`](mimir_v2_spec.md), and
+[`mimir_spec.md`](mimir_spec.md).
 
 ## Run locally
 
@@ -90,13 +83,13 @@ disables outbound network connections.
 npm test
 ```
 
-The suite builds the deployable worker, renders the application shell, checks
-public-only and offline constraints, and verifies deterministic v1, v2, and v3
-policy output and fail-closed validation.
+The suite builds the deployable worker, renders the application shell, verifies
+deterministic v1–v4 compiler behavior and fail-closed validation, and checks the
+5×5 template's exhaustive semantic equivalence invariant.
 
 ## Safety status
 
 Mimir remains pre-mainnet software. Reproduce every descriptor, script,
-address, threshold, timelock, and branch with trusted Bitcoin tooling, then
+address, threshold, timelock, and path with trusted Bitcoin tooling, then
 complete a recovery rehearsal before funding. Never paste a private key or seed
 phrase into this app.
