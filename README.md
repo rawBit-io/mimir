@@ -53,7 +53,7 @@ deterministic compatibility, while the pre-mainnet web UI intentionally exposes
 only regtest and signet. The immutable v1 and v2 compilers and specifications
 remain available for compatibility and regression coverage.
 
-The current normative contract is [`mimir_v3_spec.md`](mimir_v3_spec.md).
+The concise implemented contract is [`mimir_v3_spec.md`](mimir_v3_spec.md).
 Legacy contracts remain in [`mimir_spec.md`](mimir_spec.md) and
 [`mimir_v2_spec.md`](mimir_v2_spec.md).
 
