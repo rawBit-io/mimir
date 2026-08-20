@@ -10,118 +10,103 @@ import {
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import {
-  TEMPLATE_ID_V2,
-  compileComposedPolicy,
-  unixFromComposerUtc,
-  validateCompressedPublicKey,
-  type CompiledComposerPolicy,
-  type ComposerNetwork,
-  type ComposerRequest,
-} from "../lib/composer";
+  TEMPLATE_ID_V3,
+  compileRulePolicy,
+  unixFromRuleDate,
+  validateRulePublicKey,
+  type CompiledRulePolicy,
+  type RuleComposerRequest,
+  type RuleNetwork,
+} from "../lib/rule-composer";
 
-type Role = "owner" | "heirs";
-type UiNetwork = Exclude<ComposerNetwork, "bitcoin">;
+type UiNetwork = Exclude<RuleNetwork, "bitcoin">;
+type SignerRole = "owner" | "heir";
 
 type SignerRow = {
   id: string;
   label: string;
   publicKey: string;
-  role: Role;
+  role: SignerRole;
 };
 
-type LiveCompilation = {
-  compiled: CompiledComposerPolicy | null;
+type LocalRule = {
+  id: string;
+  keyRowIds: string[];
+  threshold: number;
+  unlockDate: string | null;
+};
+
+type FieldState = {
+  labelInvalid: boolean;
+  publicKeyInvalid: boolean;
+  labelError: string | null;
+  publicKeyError: string | null;
+};
+
+type LiveResult = {
+  compiled: CompiledRulePolicy | null;
   message: string | null;
 };
 
-type RowFieldState = {
-  labelInvalid: boolean;
-  publicKeyInvalid: boolean;
-};
-
-const DEFAULT_OWNER_UNLOCK = "2030-01-01T00:00";
-const DEFAULT_HEIR_UNLOCK = "2035-01-01T00:00";
 const MAX_KEYS = 20;
-const MAX_KEYS_PER_ROLE = 10;
+const MAX_RULE_KEYS = 10;
+const MAX_RULES = 10;
+
+function firstFutureRuleDate(): string {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function defaultRuleDate(): string {
+  const date = new Date();
+  date.setUTCFullYear(date.getUTCFullYear() + 1);
+  return date.toISOString().slice(0, 10);
+}
 
 function initialRows(): SignerRow[] {
   return [
     { id: "signer-0", label: "Owner", publicKey: "", role: "owner" },
-    { id: "signer-1", label: "Heir", publicKey: "", role: "heirs" },
+    { id: "signer-1", label: "Heir", publicKey: "", role: "heir" },
   ];
 }
 
-function exactUtc(value: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
-    throw new Error("Choose an exact UTC date and time for both paths.");
-  }
-  return `${value}:00Z`;
+function isUiNetwork(value: string): value is UiNetwork {
+  return value === "regtest" || value === "signet";
 }
 
-function normalizedThreshold(value: number, count: number): number {
-  if (count === 0) return 0;
-  return Math.min(Math.max(1, value), count);
+function shortKey(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length < 20) return normalized || "Public key missing";
+  return `${normalized.slice(0, 12)}…${normalized.slice(-10)}`;
 }
 
-function shortUtc(value: string): string {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  if (!match) return "the selected time";
-  const [, year, month, day, hour, minute] = match;
+function readableDate(value: string): string {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return "the selected date";
+  const [, year, month, day] = match;
   const months = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
   ];
-  return `${Number(day)} ${months[Number(month) - 1]} ${year}, ${hour}:${minute} UTC`;
+  return `${Number(day)} ${months[Number(month) - 1]} ${year}, 00:00 UTC`;
 }
 
-function placeholderFragment(role: Role, threshold: number, count: number): string {
-  const prefix = role === "owner" ? "OWNER" : "HEIR";
-  if (count === 0) return `<ADD_${prefix}_KEY>`;
-  if (count === 1) return `pk(<${prefix}_KEY>)`;
-  const keys = Array.from(
-    { length: count },
-    (_, index) => `<${prefix}_KEY_${index + 1}>`,
-  );
-  return `multi(${normalizedThreshold(threshold, count)},${keys.join(",")})`;
+function normalizedThreshold(value: number, count: number): number {
+  return Math.min(Math.max(1, value), Math.max(1, count));
 }
 
-function placeholderUnix(value: string, fallback: string): string {
-  try {
-    return String(unixFromComposerUtc(exactUtc(value)));
-  } catch {
-    return fallback;
-  }
-}
-
-function buildPlaceholder(
-  ownerCount: number,
-  heirCount: number,
-  ownerThreshold: number,
-  heirThreshold: number,
-  ownerUnlock: string,
-  heirUnlock: string,
-): string {
-  const ownerTime = placeholderUnix(ownerUnlock, "OWNER_TIME");
-  const heirTime = placeholderUnix(heirUnlock, "HEIR_TIME");
-  return (
-    `or_i(and_v(v:after(${ownerTime}),` +
-    `${placeholderFragment("owner", ownerThreshold, ownerCount)}),` +
-    `and_v(v:after(${heirTime}),` +
-    `${placeholderFragment("heirs", heirThreshold, heirCount)}))`
-  );
-}
-
-function validateRowFields(rows: SignerRow[]): Map<string, RowFieldState> {
+function validateRows(rows: SignerRow[]): Map<string, FieldState> {
   const labels = rows.map((row) => row.label.trim().normalize("NFC"));
   const labelCounts = new Map<string, number>();
   for (const label of labels) {
-    const key = label.toLocaleLowerCase("en-US");
-    labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
+    const comparable = label.toLocaleLowerCase("en-US");
+    labelCounts.set(comparable, (labelCounts.get(comparable) ?? 0) + 1);
   }
 
   const publicKeys = rows.map((row) => {
     try {
-      return validateCompressedPublicKey(row.publicKey);
+      return validateRulePublicKey(row.publicKey);
     } catch {
       return null;
     }
@@ -137,144 +122,128 @@ function validateRowFields(rows: SignerRow[]): Map<string, RowFieldState> {
     rows.map((row, index) => {
       const label = labels[index];
       const publicKey = publicKeys[index];
+      const labelError = !label
+        ? "Enter a signer label."
+        : label.length > 80
+          ? "Use at most 80 characters."
+          : /\p{Cc}/u.test(label)
+            ? "Remove control characters from this label."
+            : (labelCounts.get(label.toLocaleLowerCase("en-US")) ?? 0) > 1
+              ? "Use a unique signer label."
+              : null;
+      const publicKeyError = !publicKey
+        ? row.publicKey.trim()
+          ? "Use a valid 66-character compressed key starting with 02 or 03."
+          : "Enter a compressed public key."
+        : (publicKeyCounts.get(publicKey) ?? 0) > 1
+          ? "This public key is already listed."
+          : null;
       return [
         row.id,
         {
-          labelInvalid:
-            !label ||
-            label.length > 80 ||
-            /\p{Cc}/u.test(label) ||
-            (labelCounts.get(label.toLocaleLowerCase("en-US")) ?? 0) > 1,
-          publicKeyInvalid:
-            !publicKey || (publicKeyCounts.get(publicKey) ?? 0) > 1,
+          labelInvalid: Boolean(labelError),
+          publicKeyInvalid: Boolean(publicKeyError),
+          labelError,
+          publicKeyError,
         },
       ];
     }),
   );
 }
 
-function compileLive(
+function compileRules(
   rows: SignerRow[],
-  ownerThreshold: number,
-  heirThreshold: number,
-  ownerUnlock: string,
-  heirUnlock: string,
+  rules: LocalRule[],
   network: UiNetwork,
-): LiveCompilation {
-  const owners = rows.filter((row) => row.role === "owner");
-  const heirs = rows.filter((row) => row.role === "heirs");
+): LiveResult {
+  if (rules.length === 0) return { compiled: null, message: null };
 
-  if (owners.length === 0) {
-    return { compiled: null, message: "Mark at least one key as Owner." };
-  }
-  if (heirs.length === 0) {
-    return { compiled: null, message: "Mark at least one key as Heir." };
-  }
-  if (owners.length > MAX_KEYS_PER_ROLE || heirs.length > MAX_KEYS_PER_ROLE) {
-    return { compiled: null, message: "Use no more than 10 keys in either path." };
-  }
-
-  const labels = rows.map((row) => row.label.trim().normalize("NFC"));
-  const missingLabel = labels.findIndex((label) => !label);
-  if (missingLabel !== -1) {
-    return { compiled: null, message: `Name key ${missingLabel + 1}.` };
-  }
-  if (labels.some((label) => label.length > 80)) {
-    return { compiled: null, message: "Keep every key label to 80 characters or fewer." };
-  }
-  if (new Set(labels.map((label) => label.toLocaleLowerCase("en-US"))).size !== labels.length) {
-    return { compiled: null, message: "Use a unique label for every key." };
-  }
-
-  const publicKeys: string[] = [];
-  for (let index = 0; index < rows.length; index += 1) {
-    if (!rows[index].publicKey.trim()) {
+  try {
+    const rowById = new Map(rows.map((row) => [row.id, row]));
+    const usedRowIds = [...new Set(rules.flatMap((rule) => rule.keyRowIds))];
+    const usedRows = usedRowIds.map((id) => {
+      const row = rowById.get(id);
+      if (!row) throw new Error("A rule references a removed key. Remove that rule and add it again.");
       return {
-        compiled: null,
-        message: `Paste the compressed public key for ${labels[index]}.`,
+        row,
+        label: row.label.trim().normalize("NFC"),
+        publicKey: validateRulePublicKey(row.publicKey),
       };
-    }
-    try {
-      publicKeys.push(validateCompressedPublicKey(rows[index].publicKey));
-    } catch {
-      return {
-        compiled: null,
-        message: `Enter a valid 66-character compressed public key for ${labels[index]} (starting 02 or 03).`,
-      };
-    }
-  }
-  if (new Set(publicKeys).size !== publicKeys.length) {
-    return { compiled: null, message: "Each public key can appear only once." };
-  }
+    });
 
-  const requestIdByPublicKey = new Map(
-    [...publicKeys]
-      .sort((left, right) => left.localeCompare(right))
-      .map((publicKey, index) => [
-        publicKey,
+    if (usedRows.some((entry) => !entry.label)) {
+      throw new Error("Name every key used by a rule.");
+    }
+    if (
+      new Set(usedRows.map((entry) => entry.label.toLocaleLowerCase("en-US"))).size !==
+      usedRows.length
+    ) {
+      throw new Error("Use a unique label for every key in the rules.");
+    }
+    if (new Set(usedRows.map((entry) => entry.publicKey)).size !== usedRows.length) {
+      throw new Error("Each public key can be used only once.");
+    }
+
+    const completeRows = rows.flatMap((row) => {
+      const label = row.label.trim().normalize("NFC");
+      if (!label || !row.publicKey.trim()) return [];
+      try {
+        return [{ row, label, publicKey: validateRulePublicKey(row.publicKey) }];
+      } catch {
+        return [];
+      }
+    });
+    const sortedKeys = completeRows.sort(
+      (left, right) =>
+        left.publicKey.localeCompare(right.publicKey) ||
+        left.label.localeCompare(right.label),
+    );
+    const requestIdByRowId = new Map(
+      sortedKeys.map((entry, index) => [
+        entry.row.id,
         `key-${String(index + 1).padStart(2, "0")}`,
       ]),
-  );
-  const requestIdByRowId = new Map(
-    rows.map((row, index) => [
-      row.id,
-      requestIdByPublicKey.get(publicKeys[index]) as string,
-    ]),
-  );
+    );
 
-  if (ownerThreshold < 1 || ownerThreshold > owners.length) {
-    return { compiled: null, message: "Choose a valid Owner signature threshold." };
-  }
-  if (heirThreshold < 1 || heirThreshold > heirs.length) {
-    return { compiled: null, message: "Choose a valid Heir signature threshold." };
-  }
+    const request: RuleComposerRequest = {
+      format: "mimir-rule-request",
+      version: 3,
+      network,
+      template_id: TEMPLATE_ID_V3,
+      keys: sortedKeys.map((entry, index) => ({
+        id: `key-${String(index + 1).padStart(2, "0")}`,
+        label: entry.label,
+        public_key: entry.publicKey,
+      })),
+      rules: rules.map((rule) => ({
+        key_ids: rule.keyRowIds.map((rowId) => {
+          const requestId = requestIdByRowId.get(rowId);
+          if (!requestId) throw new Error("A rule contains an unknown key.");
+          return requestId;
+        }),
+        threshold: rule.threshold,
+        unlock_unix: rule.unlockDate ? unixFromRuleDate(rule.unlockDate) : null,
+      })),
+    };
 
-  let ownerUnix: number;
-  let heirUnix: number;
-  try {
-    ownerUnix = unixFromComposerUtc(exactUtc(ownerUnlock));
-    heirUnix = unixFromComposerUtc(exactUtc(heirUnlock));
+    return { compiled: compileRulePolicy(request), message: null };
   } catch (error) {
     return {
       compiled: null,
-      message: error instanceof Error ? error.message : "Choose valid UTC unlock times.",
+      message: error instanceof Error ? error.message : "The rules could not be compiled.",
     };
   }
-  if (ownerUnix >= heirUnix) {
-    return { compiled: null, message: "Set the Owner time earlier than the Heir time." };
-  }
+}
 
-  const keys = rows.map((row, index) => ({
-    id: requestIdByRowId.get(row.id) as string,
-    label: labels[index],
-    public_key: publicKeys[index],
-  }));
-  const request: ComposerRequest = {
-    format: "mimir-composer-request",
-    version: 2,
-    network,
-    template_id: TEMPLATE_ID_V2,
-    keys,
-    owner: {
-      key_ids: owners.map((row) => requestIdByRowId.get(row.id) as string),
-      threshold: ownerThreshold,
-      unlock_unix: ownerUnix,
-    },
-    heirs: {
-      key_ids: heirs.map((row) => requestIdByRowId.get(row.id) as string),
-      threshold: heirThreshold,
-      unlock_unix: heirUnix,
-    },
-  };
-
-  try {
-    return { compiled: compileComposedPolicy(request), message: null };
-  } catch (error) {
-    return {
-      compiled: null,
-      message: error instanceof Error ? error.message : "The policy could not be compiled.",
-    };
-  }
+function ruleSummary(rule: LocalRule, rowById: Map<string, SignerRow>): string {
+  const names = rule.keyRowIds.map((id) => rowById.get(id)?.label.trim() || "Unnamed key");
+  const signers = names.length === 1
+    ? names[0]
+    : `${rule.threshold} of ${names.length} · ${names.join(", ")}`;
+  const timing = rule.unlockDate
+    ? `from ${readableDate(rule.unlockDate)}`
+    : "immediately";
+  return `${signers} can spend ${timing}.`;
 }
 
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -303,7 +272,7 @@ function TechnicalItem({ label, value }: { label: string; value: string }) {
     <div className="technical-item">
       <div>
         <span>{label}</span>
-        <CopyButton value={value} label={label} />
+        <CopyButton key={value} value={value} label={label} />
       </div>
       <code>{value}</code>
     </div>
@@ -312,117 +281,179 @@ function TechnicalItem({ label, value }: { label: string; value: string }) {
 
 export default function Home() {
   const [rows, setRows] = useState<SignerRow[]>(initialRows);
-  const [ownerThreshold, setOwnerThreshold] = useState(1);
-  const [heirThreshold, setHeirThreshold] = useState(1);
-  const [ownerUnlock, setOwnerUnlock] = useState(DEFAULT_OWNER_UNLOCK);
-  const [heirUnlock, setHeirUnlock] = useState(DEFAULT_HEIR_UNLOCK);
+  const [rules, setRules] = useState<LocalRule[]>([]);
   const [network, setNetwork] = useState<UiNetwork>("regtest");
+  const [selectedKeyIds, setSelectedKeyIds] = useState<string[]>([]);
+  const [multisig, setMultisig] = useState(false);
+  const [threshold, setThreshold] = useState(1);
+  const [timeDelay, setTimeDelay] = useState(false);
+  const [unlockDate, setUnlockDate] = useState(defaultRuleDate);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const nextSignerId = useRef(2);
+  const nextRuleId = useRef(1);
 
-  const ownerCount = rows.filter((row) => row.role === "owner").length;
-  const heirCount = rows.filter((row) => row.role === "heirs").length;
+  const rowById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
+  const fieldState = useMemo(() => validateRows(rows), [rows]);
+  const usedByRule = useMemo(() => {
+    return new Set(rules.flatMap((rule) => rule.keyRowIds));
+  }, [rules]);
+  const live = useMemo(() => compileRules(rows, rules, network), [rows, rules, network]);
 
-  const live = useMemo(
-    () =>
-      compileLive(
-        rows,
-        ownerThreshold,
-        heirThreshold,
-        ownerUnlock,
-        heirUnlock,
-        network,
-      ),
-    [rows, ownerThreshold, heirThreshold, ownerUnlock, heirUnlock, network],
-  );
-
-  const placeholder = useMemo(
-    () =>
-      buildPlaceholder(
-        ownerCount,
-        heirCount,
-        ownerThreshold,
-        heirThreshold,
-        ownerUnlock,
-        heirUnlock,
-      ),
-    [ownerCount, heirCount, ownerThreshold, heirThreshold, ownerUnlock, heirUnlock],
-  );
-  const rowFieldStates = useMemo(() => validateRowFields(rows), [rows]);
-
-  const policySentence =
-    ownerCount === 0 || heirCount === 0
-      ? "Add at least one Owner key and one Heir key to complete the recovery path."
-      : `${ownerThreshold} of ${ownerCount} Owner ${ownerCount === 1 ? "key" : "keys"} may spend from ${shortUtc(ownerUnlock)}. ${heirThreshold} of ${heirCount} Heir ${heirCount === 1 ? "key" : "keys"} may also spend from ${shortUtc(heirUnlock)}. The Owner path stays available.`;
+  const draftMessage = useMemo(() => {
+    if (rules.length >= MAX_RULES) return "Remove a rule before adding another.";
+    if (selectedKeyIds.length === 0) return "Choose a key for this rule.";
+    if (!multisig && selectedKeyIds.length !== 1) return "Choose exactly one key.";
+    if (multisig && selectedKeyIds.length < 2) return "Choose at least two keys for multisig.";
+    if (selectedKeyIds.length > MAX_RULE_KEYS) return "A rule can use at most 10 keys.";
+    if (threshold < 1 || threshold > selectedKeyIds.length) return "Choose a valid signature threshold.";
+    for (const id of selectedKeyIds) {
+      const state = fieldState.get(id);
+      if (!state || state.labelInvalid || state.publicKeyInvalid) {
+        return "Complete every selected key before adding the rule.";
+      }
+      if (usedByRule.has(id)) return "A key can appear in only one rule.";
+    }
+    if (timeDelay) {
+      try {
+        unixFromRuleDate(unlockDate);
+      } catch (error) {
+        return error instanceof Error ? error.message : "Choose a valid delay date.";
+      }
+      if (unlockDate < firstFutureRuleDate()) {
+        return "Choose a future unlock date for a real time delay.";
+      }
+    }
+    return null;
+  }, [
+    rules.length,
+    selectedKeyIds,
+    multisig,
+    threshold,
+    fieldState,
+    usedByRule,
+    timeDelay,
+    unlockDate,
+  ]);
 
   function updateRow(id: string, patch: Partial<Omit<SignerRow, "id">>) {
     setRows((current) =>
       current.map((row) => (row.id === id ? { ...row, ...patch } : row)),
     );
-  }
-
-  function changeRole(id: string, role: Role) {
-    const current = rows.find((row) => row.id === id);
-    if (!current || current.role === role) return;
-    const nextOwnerCount = ownerCount + (role === "owner" ? 1 : -1);
-    const nextHeirCount = heirCount + (role === "heirs" ? 1 : -1);
-    if (nextOwnerCount > MAX_KEYS_PER_ROLE || nextHeirCount > MAX_KEYS_PER_ROLE) return;
-    updateRow(id, { role });
-    setOwnerThreshold((value) => normalizedThreshold(value, nextOwnerCount));
-    setHeirThreshold((value) => normalizedThreshold(value, nextHeirCount));
+    setFeedback(null);
   }
 
   function addKey() {
-    const nextRole: Role =
-      heirCount < MAX_KEYS_PER_ROLE ? "heirs" : "owner";
-    if (
-      rows.length >= MAX_KEYS ||
-      (heirCount >= MAX_KEYS_PER_ROLE && ownerCount >= MAX_KEYS_PER_ROLE)
-    ) {
-      return;
-    }
+    if (rows.length >= MAX_KEYS) return;
+    const id = `signer-${nextSignerId.current}`;
+    nextSignerId.current += 1;
     setRows((current) => [
       ...current,
-      {
-        id: `signer-${nextSignerId.current++}`,
-        label: "",
-        publicKey: "",
-        role: nextRole,
-      },
+      { id, label: "", publicKey: "", role: "heir" },
     ]);
-    if (nextRole === "owner") {
-      setOwnerThreshold((value) => normalizedThreshold(value, ownerCount + 1));
-    } else {
-      setHeirThreshold((value) => normalizedThreshold(value, heirCount + 1));
-    }
+    setFeedback("New key added.");
   }
 
   function removeKey(id: string) {
-    const removed = rows.find((row) => row.id === id);
-    if (!removed) return;
-    const nextOwnerCount = ownerCount - (removed.role === "owner" ? 1 : 0);
-    const nextHeirCount = heirCount - (removed.role === "heirs" ? 1 : 0);
-    setRows((current) => current.filter((row) => row.id !== id));
-    setOwnerThreshold((value) => normalizedThreshold(value, nextOwnerCount));
-    setHeirThreshold((value) => normalizedThreshold(value, nextHeirCount));
+    const used = usedByRule.has(id);
+    const row = rowById.get(id);
+    if (used) {
+      setFeedback(
+        `Remove the saved rule before deleting ${row?.label.trim() || "this key"}.`,
+      );
+      return;
+    }
+    setRows((current) => current.filter((entry) => entry.id !== id));
+    const nextSelection = selectedKeyIds.filter((keyId) => keyId !== id);
+    setSelectedKeyIds(nextSelection);
+    setThreshold((value) => normalizedThreshold(value, nextSelection.length));
+    setFeedback("Key removed.");
+  }
+
+  function chooseDraftKey(id: string) {
+    if (usedByRule.has(id)) return;
+    const alreadySelected = selectedKeyIds.includes(id);
+    if (multisig && alreadySelected) {
+      const nextSelection = selectedKeyIds.filter((keyId) => keyId !== id);
+      setSelectedKeyIds(nextSelection);
+      setThreshold((value) => normalizedThreshold(value, nextSelection.length));
+      return;
+    }
+    const state = fieldState.get(id);
+    if (!state || state.labelInvalid || state.publicKeyInvalid) return;
+
+    if (!multisig) {
+      setSelectedKeyIds([id]);
+      setThreshold(1);
+      return;
+    }
+
+    const nextSelection = selectedKeyIds.length < MAX_RULE_KEYS
+      ? [...selectedKeyIds, id]
+      : selectedKeyIds;
+    setSelectedKeyIds(nextSelection);
+    setThreshold((value) => normalizedThreshold(value, nextSelection.length));
+  }
+
+  function toggleMultisig(enabled: boolean) {
+    setMultisig(enabled);
+    if (!enabled) {
+      setSelectedKeyIds((current) => current.slice(0, 1));
+      setThreshold(1);
+    } else {
+      setThreshold((value) => normalizedThreshold(value, selectedKeyIds.length));
+    }
+  }
+
+  function clearDraft() {
+    setSelectedKeyIds([]);
+    setMultisig(false);
+    setThreshold(1);
+    setTimeDelay(false);
+    setUnlockDate(defaultRuleDate());
+  }
+
+  function addRule() {
+    if (draftMessage) return;
+    const candidate: LocalRule = {
+      id: `local-rule-${nextRuleId.current}`,
+      keyRowIds: [...selectedKeyIds],
+      threshold,
+      unlockDate: timeDelay ? unlockDate : null,
+    };
+    const trial = compileRules(rows, [...rules, candidate], network);
+    if (!trial.compiled) {
+      setFeedback(trial.message ?? "This rule could not be added.");
+      return;
+    }
+    nextRuleId.current += 1;
+    setRules((current) => [...current, candidate]);
+    clearDraft();
+    setFeedback("Rule added. The Bitcoin script is updated.");
+  }
+
+  function removeRule(id: string) {
+    setRules((current) => current.filter((rule) => rule.id !== id));
+    setFeedback("Rule removed. Its keys are available again.");
   }
 
   function reset() {
-    if (!window.confirm("Clear every key and reset both rules? This cannot be undone.")) {
+    if (!window.confirm("Reset Mimir and clear every key and rule?")) {
       return;
     }
     setRows(initialRows());
-    nextSignerId.current = 2;
-    setOwnerThreshold(1);
-    setHeirThreshold(1);
-    setOwnerUnlock(DEFAULT_OWNER_UNLOCK);
-    setHeirUnlock(DEFAULT_HEIR_UNLOCK);
+    setRules([]);
     setNetwork("regtest");
+    clearDraft();
+    setFeedback(null);
+    nextSignerId.current = 2;
+    nextRuleId.current = 1;
   }
 
-  function downloadManifest() {
+  function downloadPolicy() {
     if (!live.compiled) return;
-    const contents = live.compiled.canonical_manifest;
-    const blob = new Blob([contents], { type: "application/json;charset=utf-8" });
+    const blob = new Blob([live.compiled.canonical_manifest], {
+      type: "application/json;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -433,11 +464,9 @@ export default function Home() {
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  function changeNetwork(value: string) {
-    if (value === "regtest" || value === "signet") {
-      setNetwork(value);
-    }
-  }
+  const naturalPolicy = rules.length
+    ? rules.map((rule) => ruleSummary(rule, rowById)).join(" OR ")
+    : "Add a rule to define who can spend and when.";
 
   return (
     <main className="page-shell">
@@ -452,7 +481,9 @@ export default function Home() {
             <span>Network</span>
             <select
               value={network}
-              onChange={(event) => changeNetwork(event.currentTarget.value)}
+              onChange={(event) => {
+                if (isUiNetwork(event.target.value)) setNetwork(event.target.value);
+              }}
             >
               <option value="regtest">Regtest</option>
               <option value="signet">Signet</option>
@@ -466,195 +497,313 @@ export default function Home() {
       </header>
 
       <div className="workspace">
-        <section className="builder" aria-labelledby="keys-heading">
-          <div className="section-heading">
-            <div>
-              <p className="section-number">01</p>
-              <h2 id="keys-heading">Keys</h2>
-              <p>Add the public keys that may spend.</p>
+        <div className="builder">
+          <section aria-labelledby="keys-heading">
+            <div className="section-heading">
+              <div>
+                <p className="section-number">01</p>
+                <h2 id="keys-heading">Keys</h2>
+                <p>Enter each signer once. Owner and Heir marks are visual labels.</p>
+              </div>
+              <span>{rows.length} / {MAX_KEYS}</span>
             </div>
-            <span>{rows.length} / {MAX_KEYS}</span>
-          </div>
 
-          <div className="signer-list">
-            {rows.map((row, index) => (
-              <article className="signer-row" data-role={row.role} key={row.id}>
-                <span className="row-number" aria-hidden="true">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <label className="label-field">
-                  <span>Label</span>
-                  <input
-                    value={row.label}
-                    onChange={(event) => updateRow(row.id, { label: event.target.value })}
-                    placeholder="Signer name"
-                    autoComplete="off"
-                    maxLength={80}
-                    aria-invalid={rowFieldStates.get(row.id)?.labelInvalid || undefined}
-                    aria-describedby={
-                      rowFieldStates.get(row.id)?.labelInvalid
-                        ? "policy-validation"
-                        : undefined
-                    }
-                  />
-                </label>
-                <label className="key-field">
-                  <span>Compressed public key</span>
-                  <input
-                    value={row.publicKey}
-                    onChange={(event) => updateRow(row.id, { publicKey: event.target.value })}
-                    placeholder="02 or 03 + 64 hex characters"
-                    autoComplete="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    inputMode="text"
-                    aria-invalid={rowFieldStates.get(row.id)?.publicKeyInvalid || undefined}
-                    aria-describedby={
-                      rowFieldStates.get(row.id)?.publicKeyInvalid
-                        ? "policy-validation"
-                        : undefined
-                    }
-                  />
-                </label>
-                <fieldset className="role-toggle">
-                  <legend>Path</legend>
-                  <div>
+            <div className="signer-list">
+              {rows.map((row, index) => {
+                const state = fieldState.get(row.id);
+                const used = usedByRule.has(row.id);
+                return (
+                  <article className="signer-row" data-role={row.role} key={row.id}>
+                    <span className="row-number" aria-hidden="true">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <label className="label-field">
+                      <span>Label</span>
+                      <input
+                        value={row.label}
+                        onChange={(event) => updateRow(row.id, { label: event.target.value })}
+                        placeholder="Signer name"
+                        autoComplete="off"
+                        maxLength={80}
+                        aria-invalid={state?.labelInvalid ?? false}
+                        aria-describedby={
+                          state?.labelError ? `${row.id}-label-error` : undefined
+                        }
+                      />
+                      {state?.labelError ? (
+                        <small
+                          className={row.label.trim() ? "field-error" : "sr-only"}
+                          id={`${row.id}-label-error`}
+                        >
+                          {state.labelError}
+                        </small>
+                      ) : null}
+                    </label>
+                    <label className="key-field">
+                      <span>
+                        Compressed public key{used ? " · locked by rule" : ""}
+                      </span>
+                      <input
+                        value={row.publicKey}
+                        onChange={(event) => updateRow(row.id, { publicKey: event.target.value })}
+                        placeholder="02 or 03 + 64 hex characters"
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        inputMode="text"
+                        aria-invalid={state?.publicKeyInvalid ?? false}
+                        aria-describedby={
+                          state?.publicKeyError ? `${row.id}-key-error` : undefined
+                        }
+                        disabled={used}
+                        title={used ? "Remove its saved rule before editing this key." : undefined}
+                      />
+                      {state?.publicKeyError ? (
+                        <small
+                          className={row.publicKey.trim() ? "field-error" : "sr-only"}
+                          id={`${row.id}-key-error`}
+                        >
+                          {state.publicKeyError}
+                        </small>
+                      ) : null}
+                    </label>
+                    <fieldset className="role-toggle">
+                      <legend>Mark</legend>
+                      <div>
+                        <button
+                          type="button"
+                          className={row.role === "owner" ? "is-active" : ""}
+                          onClick={() => updateRow(row.id, { role: "owner" })}
+                          aria-pressed={row.role === "owner"}
+                          aria-label={`Mark ${row.label.trim() || `key ${index + 1}`} as Owner`}
+                        >
+                          Owner
+                        </button>
+                        <button
+                          type="button"
+                          className={row.role === "heir" ? "is-active" : ""}
+                          onClick={() => updateRow(row.id, { role: "heir" })}
+                          aria-pressed={row.role === "heir"}
+                          aria-label={`Mark ${row.label.trim() || `key ${index + 1}`} as Heir`}
+                        >
+                          Heir
+                        </button>
+                      </div>
+                    </fieldset>
                     <button
+                      className="remove-button"
                       type="button"
-                      className={row.role === "owner" ? "is-active" : ""}
-                      onClick={() => changeRole(row.id, "owner")}
-                      disabled={row.role !== "owner" && ownerCount >= MAX_KEYS_PER_ROLE}
-                      aria-pressed={row.role === "owner"}
-                      aria-label={`${row.label || `Key ${index + 1}`} uses the Owner path`}
+                      onClick={() => removeKey(row.id)}
+                      aria-label={`Remove ${row.label.trim() || `key ${index + 1}`}`}
                     >
-                      Owner
+                      <Trash2 size={17} aria-hidden="true" />
                     </button>
-                    <button
-                      type="button"
-                      className={row.role === "heirs" ? "is-active" : ""}
-                      onClick={() => changeRole(row.id, "heirs")}
-                      disabled={row.role !== "heirs" && heirCount >= MAX_KEYS_PER_ROLE}
-                      aria-pressed={row.role === "heirs"}
-                      aria-label={`${row.label || `Key ${index + 1}`} uses the Heir path`}
-                    >
-                      Heir
-                    </button>
-                  </div>
-                </fieldset>
-                <button
-                  className="remove-button"
-                  type="button"
-                  onClick={() => removeKey(row.id)}
-                  aria-label={`Remove ${row.label || `key ${index + 1}`}`}
-                >
-                  <Trash2 size={17} aria-hidden="true" />
-                </button>
-              </article>
-            ))}
-          </div>
+                  </article>
+                );
+              })}
+            </div>
 
-          <button
-            className="add-button"
-            type="button"
-            aria-label="ADD KEY"
-            onClick={addKey}
-            disabled={
-              rows.length >= MAX_KEYS ||
-              (heirCount >= MAX_KEYS_PER_ROLE && ownerCount >= MAX_KEYS_PER_ROLE)
-            }
-          >
-            <Plus size={17} aria-hidden="true" />
-            Add key
-          </button>
+            <button
+              className="add-key-button"
+              type="button"
+              onClick={addKey}
+              disabled={rows.length >= MAX_KEYS}
+            >
+              <Plus size={17} aria-hidden="true" />
+              Add key
+            </button>
+          </section>
 
-          <section className="rules" aria-labelledby="rules-heading">
+          <section className="new-rule" aria-labelledby="new-rule-heading">
             <div className="section-heading compact">
               <div>
                 <p className="section-number">02</p>
-                <h2 id="rules-heading">Rules</h2>
+                <h2 id="new-rule-heading">NEW RULE</h2>
+                <p>Choose who can spend, how many signatures are needed, and when.</p>
               </div>
             </div>
 
-            <div className="rule-row">
-              <strong>Owner</strong>
-              <span>needs</span>
-              <label>
-                <span className="sr-only">Owner signature threshold</span>
-                <select
-                  value={ownerCount === 0 ? 0 : ownerThreshold}
-                  onChange={(event) => setOwnerThreshold(Number(event.target.value))}
-                  disabled={ownerCount === 0}
-                >
-                  {ownerCount === 0 ? <option value={0}>—</option> : null}
-                  {Array.from({ length: ownerCount }, (_, index) => (
-                    <option value={index + 1} key={index + 1}>{index + 1}</option>
-                  ))}
-                </select>
-              </label>
-              <span>of {ownerCount} signatures after</span>
-              <label className="date-control">
-                <span className="sr-only">Owner unlock date and time in UTC</span>
-                <input
-                  type="datetime-local"
-                  value={ownerUnlock}
-                  onChange={(event) => setOwnerUnlock(event.target.value)}
-                  max="2038-01-19T03:14"
-                  step={60}
-                />
-              </label>
-              <span>UTC</span>
-            </div>
-
-            <div className="rule-row">
-              <strong>Heirs</strong>
-              <span>need</span>
-              <label>
-                <span className="sr-only">Heir signature threshold</span>
-                <select
-                  value={heirCount === 0 ? 0 : heirThreshold}
-                  onChange={(event) => setHeirThreshold(Number(event.target.value))}
-                  disabled={heirCount === 0}
-                >
-                  {heirCount === 0 ? <option value={0}>—</option> : null}
-                  {Array.from({ length: heirCount }, (_, index) => (
-                    <option value={index + 1} key={index + 1}>{index + 1}</option>
-                  ))}
-                </select>
-              </label>
-              <span>of {heirCount} signatures after</span>
-              <label className="date-control">
-                <span className="sr-only">Heir unlock date and time in UTC</span>
-                <input
-                  type="datetime-local"
-                  value={heirUnlock}
-                  onChange={(event) => setHeirUnlock(event.target.value)}
-                  max="2038-01-19T03:14"
-                  step={60}
-                />
-              </label>
-              <span>UTC</span>
-            </div>
-
-            <p className="utc-note">
-              Times are interpreted exactly as UTC, not as your device timezone.
+            <p className="role-safety">
+              <strong>Owner / Heir marks do not enforce spending.</strong> The selected keys,
+              multisig threshold, and time delay do. An Heir-marked key without a delay can
+              spend immediately.
             </p>
+
+            <fieldset className="key-picker">
+              <legend>Choose keys</legend>
+              <div className="key-tiles">
+                {rows.map((row) => {
+                  const state = fieldState.get(row.id);
+                  const used = usedByRule.has(row.id);
+                  const selected = selectedKeyIds.includes(row.id);
+                  const selectionLimitReached =
+                    multisig && selectedKeyIds.length >= MAX_RULE_KEYS && !selected;
+                  const unavailable =
+                    used ||
+                    selectionLimitReached ||
+                    !state ||
+                    state.labelInvalid ||
+                    state.publicKeyInvalid;
+                  return (
+                    <label
+                      className={`key-tile${selected ? " is-selected" : ""}`}
+                      data-role={row.role}
+                      key={row.id}
+                    >
+                      <input
+                        type={multisig ? "checkbox" : "radio"}
+                        name={multisig ? undefined : "single-rule-key"}
+                        checked={selected}
+                        disabled={unavailable && !selected}
+                        onChange={() => chooseDraftKey(row.id)}
+                      />
+                      <span className="role-mark">{row.role}</span>
+                      <strong>{row.label.trim() || "Unnamed key"}</strong>
+                      <code>{shortKey(row.publicKey)}</code>
+                      <small>
+                        {used
+                          ? "Used in a saved rule"
+                          : selectionLimitReached
+                            ? "10-key limit reached"
+                          : unavailable
+                            ? "Complete this key first"
+                            : selected
+                              ? "Selected"
+                              : "Available"}
+                      </small>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            <div className="rule-options">
+              <div className="option-block">
+                <label className="option-switch">
+                  <input
+                    type="checkbox"
+                    checked={multisig}
+                    onChange={(event) => toggleMultisig(event.target.checked)}
+                  />
+                  <span>
+                    <strong>Multisig</strong>
+                    <small>Choose how many selected keys must sign.</small>
+                  </span>
+                </label>
+                {multisig ? (
+                  <label className="threshold-field">
+                    <span>Signatures required</span>
+                    <select
+                      value={threshold}
+                      onChange={(event) => setThreshold(Number(event.target.value))}
+                      disabled={selectedKeyIds.length === 0}
+                    >
+                      {Array.from(
+                        { length: Math.max(1, selectedKeyIds.length) },
+                        (_, index) => (
+                          <option value={index + 1} key={index + 1}>{index + 1}</option>
+                        ),
+                      )}
+                    </select>
+                    <small>of {selectedKeyIds.length} selected</small>
+                  </label>
+                ) : (
+                  <p className="option-note">One selected key can sign.</p>
+                )}
+              </div>
+
+              <div className="option-block">
+                <label className="option-switch">
+                  <input
+                    type="checkbox"
+                    checked={timeDelay}
+                    onChange={(event) => setTimeDelay(event.target.checked)}
+                  />
+                  <span>
+                    <strong>Time delay</strong>
+                    <small>Prevent this rule from spending before a date.</small>
+                  </span>
+                </label>
+                {timeDelay ? (
+                  <label className="date-field">
+                    <span>Available from · 00:00 UTC</span>
+                    <input
+                      type="date"
+                      value={unlockDate}
+                      onChange={(event) => setUnlockDate(event.target.value)}
+                      min={firstFutureRuleDate()}
+                      max="2038-01-19"
+                    />
+                    <small>
+                      Bitcoin uses median time past; activation may be later.
+                    </small>
+                  </label>
+                ) : (
+                  <p className="option-note">This rule can spend immediately.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="add-rule-row">
+              <p role="status" aria-live="polite">{draftMessage ?? "Ready to add."}</p>
+              <button
+                className="add-rule-button"
+                type="button"
+                onClick={addRule}
+                disabled={Boolean(draftMessage)}
+              >
+                <Plus size={17} aria-hidden="true" />
+                ADD RULE
+              </button>
+            </div>
           </section>
 
-          {live.message ? (
-            <p
-              className="validation-message"
-              id="policy-validation"
-              role="status"
-              aria-live="polite"
-            >
-              {live.message}
-            </p>
-          ) : (
-            <p className="valid-message" role="status" aria-live="polite">
-              Script valid · updates are compiled immediately
-            </p>
-          )}
-        </section>
+          <section className="your-rules" aria-labelledby="your-rules-heading">
+            <div className="section-heading compact">
+              <div>
+                <p className="section-number">03</p>
+                <h2 id="your-rules-heading">YOUR RULES</h2>
+                <p>Any one complete rule can unlock the Bitcoin.</p>
+              </div>
+              <span>{rules.length} / {MAX_RULES}</span>
+            </div>
+
+            {rules.length === 0 ? (
+              <p className="empty-rules">No rules yet. Add one above.</p>
+            ) : (
+              <ol className="rule-list">
+                {rules.map((rule) => (
+                  <li key={rule.id}>
+                    <span className="rule-index">RULE</span>
+                    <p>{ruleSummary(rule, rowById)}</p>
+                    <div className="rule-members" aria-label="Keys in this saved rule">
+                      {rule.keyRowIds.map((id) => {
+                        const row = rowById.get(id);
+                        return (
+                          <span key={id}>
+                            <small>{row?.role ?? "key"}</small>
+                            {row?.label.trim() || "Unnamed key"}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeRule(rule.id)}
+                      aria-label={`Remove rule: ${ruleSummary(rule, rowById)}`}
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+
+          {feedback ? (
+            <p className="feedback" role="status" aria-live="polite">{feedback}</p>
+          ) : null}
+        </div>
 
         <aside className="script-pane" aria-labelledby="script-heading">
           <header>
@@ -662,37 +811,56 @@ export default function Home() {
               <p>Live output</p>
               <h2 id="script-heading">LIVE BITCOIN SCRIPT</h2>
             </div>
-            <span>{live.compiled ? "Valid" : "Draft"}</span>
+            <span>{live.compiled ? "Valid" : rules.length ? "Check rules" : "Empty"}</span>
           </header>
 
           <section className="live-section policy-summary">
             <h3>Policy</h3>
-            <p>{policySentence}</p>
+            <p>{naturalPolicy}</p>
+            {live.message ? (
+              <p className="live-error" role="status" aria-live="polite">
+                {live.message}
+              </p>
+            ) : null}
           </section>
 
-          <section className="live-section">
+          <section className={`live-section${rules.length === 0 ? " is-empty" : ""}`}>
             <div className="live-label">
-              <h3>{live.compiled ? "Miniscript" : "Policy skeleton"}</h3>
+              <h3>Miniscript</h3>
               {live.compiled ? (
-                <CopyButton value={live.compiled.miniscript} label="Miniscript" />
+                <CopyButton
+                  key={live.compiled.miniscript}
+                  value={live.compiled.miniscript}
+                  label="Miniscript"
+                />
               ) : null}
             </div>
-            <code>{live.compiled?.miniscript ?? placeholder}</code>
+            <code>{live.compiled?.miniscript ?? (rules.length ? "waiting for valid rules" : "No rules yet")}</code>
           </section>
 
-          <section className="live-section">
+          <section className={`live-section${rules.length === 0 ? " is-empty" : ""}`}>
             <div className="live-label">
               <h3>Bitcoin Script (ASM)</h3>
-              {live.compiled ? <CopyButton value={live.compiled.asm} label="Bitcoin Script ASM" /> : null}
+              {live.compiled ? (
+                <CopyButton
+                  key={live.compiled.asm}
+                  value={live.compiled.asm}
+                  label="Bitcoin Script ASM"
+                />
+              ) : null}
             </div>
-            <code>{live.compiled?.asm ?? "waiting for valid public keys"}</code>
+            <code>{live.compiled?.asm ?? (rules.length ? "waiting for valid rules" : "No rules yet")}</code>
           </section>
 
           {live.compiled ? (
             <section className="address-block">
               <div>
                 <span>{network === "regtest" ? "Regtest" : "Signet"} P2WSH address</span>
-                <CopyButton value={live.compiled.address} label="P2WSH address" />
+                <CopyButton
+                  key={live.compiled.address}
+                  value={live.compiled.address}
+                  label="P2WSH address"
+                />
               </div>
               <code>{live.compiled.address}</code>
             </section>
@@ -716,18 +884,17 @@ export default function Home() {
                   <span>Before funding</span>
                   <ul>
                     {live.compiled.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-                    <li>CLTV spends require a matching transaction nLockTime and a non-final input sequence.</li>
                   </ul>
                 </div>
 
-                <button className="download-button" type="button" onClick={downloadManifest}>
+                <button className="download-button" type="button" onClick={downloadPolicy}>
                   <Download size={16} aria-hidden="true" />
                   Download policy JSON
                 </button>
               </div>
             ) : (
               <p className="technical-waiting">
-                Descriptor, script hex, checks, warnings, and JSON appear when the policy is valid.
+                Descriptor, script hex, checks, warnings, and JSON appear after a valid rule is added.
               </p>
             )}
           </details>
