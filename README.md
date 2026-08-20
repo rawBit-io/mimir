@@ -5,18 +5,24 @@ compressed public keys to one unified list, visually mark each signer as
 `OWNER` or `HEIR`, then construct one independent spending rule at a time. The
 exact Miniscript and Bitcoin Script ASM update live as rules change.
 
-There is no compile button, wizard, or drag-and-drop mode. Incomplete or
-invalid input produces an actionable placeholder instead of policy output.
+There is no compile button or wizard. The **NEW RULE** area has a block palette
+and rule canvas; blocks can be dragged into the canvas or clicked for keyboard
+and touch use. Incomplete or invalid input produces an actionable placeholder
+instead of policy output.
 
 ## Current policy model
 
 Each rule is built independently:
 
-1. Choose one public key, or enable **Multisig** and choose a K-of-N subset.
-2. Optionally enable **Time delay** and choose a future calendar date. Delayed
+1. Drag one or more key blocks into the rule canvas.
+2. For multiple keys, add the single **Multisig** block and set K-of-N inside it.
+3. Optionally add the single **Time delay** block and choose a future date. Delayed
    rules use `00:00:00 UTC` on that date; Bitcoin median time past can make
    actual eligibility later.
-3. Select **ADD RULE**.
+4. Select **ADD RULE**.
+
+Multisig and Time delay can each appear only once in a draft rule. Removing a
+block returns it to the palette.
 
 `OWNER` and `HEIR` marks are visual labels only. They do not change spending
 conditions; a key is delayed only when its rule enables **Time delay**.
@@ -35,7 +41,8 @@ branches can violate Miniscript sanity. Every multisig threshold must satisfy
 The web interface provides:
 
 - one editable signer list with owner/heir visual marks;
-- a compact **NEW RULE** editor with optional multisig and calendar-date delay;
+- a draggable **NEW RULE** block palette and canvas with optional multisig and
+  calendar-date delay;
 - a **YOUR RULES** list and live exact Miniscript/Bitcoin Script ASM;
 - regtest and signet selection;
 - collapsed **Technical details** containing the checksummed descriptor,

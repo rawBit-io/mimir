@@ -34,15 +34,18 @@ The application is a one-page builder:
 
 1. Add signers and enter a label plus compressed public key for each one.
 2. Mark signers as Owner or Heir for visual organization.
-3. In **NEW RULE**, select one available key.
-4. Optionally enable **Multisig**, select 2–10 keys, and choose K signatures.
-5. Optionally enable **Time delay** and choose a calendar date.
+3. Drag one or more key blocks from **RULE BLOCKS** into **RULE CANVAS**, or
+   click a block for keyboard and touch use.
+4. For multiple keys, add the single **Multisig** block and choose K signatures
+   inside it.
+5. Optionally add the single **Time delay** block and choose its date inside it.
 6. Select **ADD RULE**, then repeat for other spending paths.
 7. Review the live Miniscript, Bitcoin Script, address, and technical details.
 
 The interface combines all saved rules with OR. It has no compile button and no
-drag-and-drop workflow. Current output recalculates from saved rules, complete
-key rows, and the network. Owner/Heir marks never enter the compiler.
+wizard. Multisig and Time delay can each appear only once in a draft; removing
+one returns it to the palette. Current output recalculates from saved rules,
+complete key rows, and the network. Owner/Heir marks never enter the compiler.
 
 A used key's public-key value cannot be edited or deleted until its rule is
 removed; its label and visual role remain editable. The key is unavailable to

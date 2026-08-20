@@ -34,6 +34,9 @@ test("server-renders the live Mimir script builder", async () => {
   assert.match(html, /Build a Bitcoin recovery script\./);
   assert.match(html, /Public keys only · updates live · offline/);
   assert.match(html, /NEW RULE/);
+  assert.match(html, /RULE BLOCKS/);
+  assert.match(html, /RULE CANVAS/);
+  assert.match(html, /DROP BLOCKS HERE/);
   assert.match(html, /Multisig/);
   assert.match(html, /Time delay/);
   assert.match(html, /ADD RULE/);
@@ -46,7 +49,7 @@ test("server-renders the live Mimir script builder", async () => {
   assert.match(html, /connect-src &#x27;none&#x27;/);
   assert.doesNotMatch(
     html,
-    /Owner needs|Heirs need|datetime-local|MIMIR \/\/ POLICY TERMINAL|COMPILE POLICY|PUBLIC KEY REGISTRY|ACTIVE DROP|DRAG|DROP|Step 1|fingerprint|xpub/i,
+    /Owner needs|Heirs need|datetime-local|MIMIR \/\/ POLICY TERMINAL|COMPILE POLICY|PUBLIC KEY REGISTRY|Step 1|fingerprint|xpub/i,
   );
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
@@ -61,6 +64,9 @@ test("removes the disposable starter and external runtime assets", async () => {
   assert.match(page, /Build a Bitcoin recovery script\./);
   assert.match(page, /Public keys only · updates live · offline/);
   assert.match(page, /NEW RULE/);
+  assert.match(page, /RULE BLOCKS/);
+  assert.match(page, /RULE CANVAS/);
+  assert.match(page, /DROP BLOCKS HERE/);
   assert.match(page, /Multisig/);
   assert.match(page, /Time delay/);
   assert.match(page, /ADD RULE/);
@@ -73,9 +79,13 @@ test("removes the disposable starter and external runtime assets", async () => {
   assert.match(page, /new Blob\(\[live\.compiled\.canonical_manifest\]/);
   assert.match(page, /value === "regtest" \|\| value === "signet"/);
   assert.match(page, /type="date"/);
+  assert.match(page, /DRAFT_BLOCK_MIME/);
+  assert.match(page, /draggable=/);
+  assert.match(page, /onDragStart=/);
+  assert.match(page, /onDrop=/);
   assert.doesNotMatch(
     page,
-    /Owner needs|Heirs need|datetime-local|MIMIR \/\/ POLICY TERMINAL|COMPILE POLICY|PUBLIC KEY REGISTRY|draggable|onDragStart|onDrop|activeTarget|fingerprint|xpub|crypto\.randomUUID/i,
+    /Owner needs|Heirs need|datetime-local|MIMIR \/\/ POLICY TERMINAL|COMPILE POLICY|PUBLIC KEY REGISTRY|activeTarget|fingerprint|xpub|crypto\.randomUUID/i,
   );
   assert.match(layout, /connect-src 'none'/);
   assert.match(layout, /index: false, follow: false/);

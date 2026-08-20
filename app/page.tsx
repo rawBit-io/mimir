@@ -2,13 +2,18 @@
 
 import {
   Check,
+  Clock3,
   Clipboard,
   Download,
+  GripVertical,
+  KeyRound,
   Plus,
   RotateCcw,
   Trash2,
+  UsersRound,
+  X,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { type DragEvent, useMemo, useRef, useState } from "react";
 import {
   TEMPLATE_ID_V3,
   compileRulePolicy,
@@ -51,6 +56,9 @@ type LiveResult = {
 const MAX_KEYS = 20;
 const MAX_RULE_KEYS = 10;
 const MAX_RULES = 10;
+const DRAFT_BLOCK_MIME = "application/x-mimir-rule-block";
+
+type DraftBlockToken = "multisig" | "time-delay" | `key:${string}`;
 
 function firstFutureRuleDate(): string {
   const date = new Date();
@@ -289,6 +297,7 @@ export default function Home() {
   const [timeDelay, setTimeDelay] = useState(false);
   const [unlockDate, setUnlockDate] = useState(defaultRuleDate);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [dropActive, setDropActive] = useState(false);
   const nextSignerId = useRef(2);
   const nextRuleId = useRef(1);
 
@@ -301,9 +310,9 @@ export default function Home() {
 
   const draftMessage = useMemo(() => {
     if (rules.length >= MAX_RULES) return "Remove a rule before adding another.";
-    if (selectedKeyIds.length === 0) return "Choose a key for this rule.";
-    if (!multisig && selectedKeyIds.length !== 1) return "Choose exactly one key.";
-    if (multisig && selectedKeyIds.length < 2) return "Choose at least two keys for multisig.";
+    if (selectedKeyIds.length === 0) return "Drop at least one key into the rule.";
+    if (!multisig && selectedKeyIds.length > 1) return "Add the Multisig block or keep only one key.";
+    if (multisig && selectedKeyIds.length < 2) return "Drop at least two keys into Multisig.";
     if (selectedKeyIds.length > MAX_RULE_KEYS) return "A rule can use at most 10 keys.";
     if (threshold < 1 || threshold > selectedKeyIds.length) return "Choose a valid signature threshold.";
     for (const id of selectedKeyIds) {
@@ -369,38 +378,84 @@ export default function Home() {
     setFeedback("Key removed.");
   }
 
-  function chooseDraftKey(id: string) {
-    if (usedByRule.has(id)) return;
-    const alreadySelected = selectedKeyIds.includes(id);
-    if (multisig && alreadySelected) {
-      const nextSelection = selectedKeyIds.filter((keyId) => keyId !== id);
-      setSelectedKeyIds(nextSelection);
-      setThreshold((value) => normalizedThreshold(value, nextSelection.length));
-      return;
-    }
+  function addDraftKey(id: string) {
     const state = fieldState.get(id);
-    if (!state || state.labelInvalid || state.publicKeyInvalid) return;
+    if (
+      usedByRule.has(id) ||
+      selectedKeyIds.includes(id) ||
+      selectedKeyIds.length >= MAX_RULE_KEYS ||
+      !state ||
+      state.labelInvalid ||
+      state.publicKeyInvalid
+    ) return;
 
-    if (!multisig) {
-      setSelectedKeyIds([id]);
-      setThreshold(1);
-      return;
-    }
-
-    const nextSelection = selectedKeyIds.length < MAX_RULE_KEYS
-      ? [...selectedKeyIds, id]
-      : selectedKeyIds;
+    const nextSelection = [...selectedKeyIds, id];
     setSelectedKeyIds(nextSelection);
     setThreshold((value) => normalizedThreshold(value, nextSelection.length));
+    setFeedback(`${rowById.get(id)?.label.trim() || "Key"} added to the draft rule.`);
   }
 
-  function toggleMultisig(enabled: boolean) {
-    setMultisig(enabled);
-    if (!enabled) {
-      setSelectedKeyIds((current) => current.slice(0, 1));
-      setThreshold(1);
-    } else {
+  function removeDraftKey(id: string) {
+    const nextSelection = selectedKeyIds.filter((keyId) => keyId !== id);
+    setSelectedKeyIds(nextSelection);
+    setThreshold((value) => normalizedThreshold(value, nextSelection.length));
+    setFeedback(`${rowById.get(id)?.label.trim() || "Key"} returned to the block palette.`);
+  }
+
+  function addDraftBlock(token: DraftBlockToken) {
+    if (token.startsWith("key:")) {
+      addDraftKey(token.slice(4));
+      return;
+    }
+    if (token === "multisig" && !multisig) {
+      setMultisig(true);
       setThreshold((value) => normalizedThreshold(value, selectedKeyIds.length));
+      setFeedback("Multisig added. Choose the required signatures inside the block.");
+      return;
+    }
+    if (token === "time-delay" && !timeDelay) {
+      setTimeDelay(true);
+      setFeedback("Time delay added. Choose its unlock date inside the block.");
+    }
+  }
+
+  function removeMultisigBlock() {
+    setMultisig(false);
+    setThreshold(1);
+    setFeedback(
+      selectedKeyIds.length > 1
+        ? "Multisig returned to the palette. Add it again or keep only one key."
+        : "Multisig returned to the block palette.",
+    );
+  }
+
+  function removeTimeDelayBlock() {
+    setTimeDelay(false);
+    setFeedback("Time delay returned to the block palette.");
+  }
+
+  function startPaletteDrag(
+    event: DragEvent<HTMLButtonElement>,
+    token: DraftBlockToken,
+  ) {
+    event.dataTransfer.setData(DRAFT_BLOCK_MIME, token);
+    event.dataTransfer.setData("text/plain", token);
+    event.dataTransfer.effectAllowed = "copy";
+    setDropActive(false);
+  }
+
+  function dropPaletteBlock(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setDropActive(false);
+    const value =
+      event.dataTransfer.getData(DRAFT_BLOCK_MIME) ||
+      event.dataTransfer.getData("text/plain");
+    if (
+      value === "multisig" ||
+      value === "time-delay" ||
+      value.startsWith("key:")
+    ) {
+      addDraftBlock(value as DraftBlockToken);
     }
   }
 
@@ -467,6 +522,7 @@ export default function Home() {
   const naturalPolicy = rules.length
     ? rules.map((rule) => ruleSummary(rule, rowById)).join(" OR ")
     : "Add a rule to define who can spend and when.";
+  const draftBlockCount = selectedKeyIds.length + Number(multisig) + Number(timeDelay);
 
   return (
     <main className="page-shell">
@@ -623,126 +679,273 @@ export default function Home() {
               </div>
             </div>
 
-            <p className="role-safety">
-              <strong>Owner / Heir marks do not enforce spending.</strong> The selected keys,
-              multisig threshold, and time delay do. An Heir-marked key without a delay can
-              spend immediately.
-            </p>
+            <section className="rule-palette" aria-labelledby="palette-heading">
+              <header className="palette-heading">
+                <div>
+                  <span id="palette-heading">RULE BLOCKS</span>
+                  <small>Drag a block into the canvas, or click it.</small>
+                </div>
+                <span>Keys · Multisig · Time delay</span>
+              </header>
 
-            <fieldset className="key-picker">
-              <legend>Choose keys</legend>
-              <div className="key-tiles">
+              <div className="palette-items">
                 {rows.map((row) => {
                   const state = fieldState.get(row.id);
                   const used = usedByRule.has(row.id);
                   const selected = selectedKeyIds.includes(row.id);
                   const selectionLimitReached =
-                    multisig && selectedKeyIds.length >= MAX_RULE_KEYS && !selected;
-                  const unavailable =
-                    used ||
-                    selectionLimitReached ||
-                    !state ||
-                    state.labelInvalid ||
-                    state.publicKeyInvalid;
+                    selectedKeyIds.length >= MAX_RULE_KEYS && !selected;
+                  const invalid =
+                    !state || state.labelInvalid || state.publicKeyInvalid;
+                  const unavailable = used || selected || selectionLimitReached || invalid;
+                  const label = row.label.trim() || "Unnamed key";
                   return (
-                    <label
-                      className={`key-tile${selected ? " is-selected" : ""}`}
+                    <button
+                      className={`palette-block palette-key${selected ? " is-in-draft" : ""}`}
                       data-role={row.role}
+                      type="button"
+                      draggable={!unavailable}
+                      disabled={unavailable}
+                      onDragStart={(event) => startPaletteDrag(event, `key:${row.id}`)}
+                      onDragEnd={() => setDropActive(false)}
+                      onClick={() => addDraftBlock(`key:${row.id}`)}
+                      aria-label={`Add ${label} key block to this rule`}
                       key={row.id}
                     >
-                      <input
-                        type={multisig ? "checkbox" : "radio"}
-                        name={multisig ? undefined : "single-rule-key"}
-                        checked={selected}
-                        disabled={unavailable && !selected}
-                        onChange={() => chooseDraftKey(row.id)}
-                      />
-                      <span className="role-mark">{row.role}</span>
-                      <strong>{row.label.trim() || "Unnamed key"}</strong>
-                      <code>{shortKey(row.publicKey)}</code>
-                      <small>
-                        {used
-                          ? "Used in a saved rule"
-                          : selectionLimitReached
-                            ? "10-key limit reached"
-                          : unavailable
-                            ? "Complete this key first"
+                      <GripVertical size={15} aria-hidden="true" />
+                      <KeyRound size={17} aria-hidden="true" />
+                      <span>
+                        <strong>{label}</strong>
+                        <small>
+                          {used
+                            ? "Used in saved rule"
                             : selected
-                              ? "Selected"
-                              : "Available"}
-                      </small>
-                    </label>
+                              ? "Already in draft"
+                              : selectionLimitReached
+                                ? "10-key limit"
+                                : invalid
+                                  ? "Complete key first"
+                                  : `${row.role} key`}
+                        </small>
+                      </span>
+                    </button>
                   );
                 })}
-              </div>
-            </fieldset>
 
-            <div className="rule-options">
-              <div className="option-block">
-                <label className="option-switch">
-                  <input
-                    type="checkbox"
-                    checked={multisig}
-                    onChange={(event) => toggleMultisig(event.target.checked)}
-                  />
+                <button
+                  className={`palette-block palette-tool${multisig ? " is-in-draft" : ""}`}
+                  type="button"
+                  draggable={!multisig}
+                  disabled={multisig}
+                  onDragStart={(event) => startPaletteDrag(event, "multisig")}
+                  onDragEnd={() => setDropActive(false)}
+                  onClick={() => addDraftBlock("multisig")}
+                  aria-label="Add one Multisig block to this rule"
+                >
+                  <GripVertical size={15} aria-hidden="true" />
+                  <UsersRound size={18} aria-hidden="true" />
                   <span>
-                    <strong>Multisig</strong>
-                    <small>Choose how many selected keys must sign.</small>
+                    <strong>MULTISIG</strong>
+                    <small>{multisig ? "Already in draft" : "K of N keys"}</small>
                   </span>
-                </label>
-                {multisig ? (
-                  <label className="threshold-field">
-                    <span>Signatures required</span>
-                    <select
-                      value={threshold}
-                      onChange={(event) => setThreshold(Number(event.target.value))}
-                      disabled={selectedKeyIds.length === 0}
-                    >
-                      {Array.from(
-                        { length: Math.max(1, selectedKeyIds.length) },
-                        (_, index) => (
-                          <option value={index + 1} key={index + 1}>{index + 1}</option>
-                        ),
+                </button>
+
+                <button
+                  className={`palette-block palette-tool${timeDelay ? " is-in-draft" : ""}`}
+                  type="button"
+                  draggable={!timeDelay}
+                  disabled={timeDelay}
+                  onDragStart={(event) => startPaletteDrag(event, "time-delay")}
+                  onDragEnd={() => setDropActive(false)}
+                  onClick={() => addDraftBlock("time-delay")}
+                  aria-label="Add one Time delay block to this rule"
+                >
+                  <GripVertical size={15} aria-hidden="true" />
+                  <Clock3 size={18} aria-hidden="true" />
+                  <span>
+                    <strong>TIME DELAY</strong>
+                    <small>{timeDelay ? "Already in draft" : "Date · 00:00 UTC"}</small>
+                  </span>
+                </button>
+              </div>
+            </section>
+
+            <section
+              className={`rule-canvas${dropActive ? " is-drop-active" : ""}`}
+              aria-labelledby="rule-canvas-heading"
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setDropActive(true);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+                setDropActive(true);
+              }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setDropActive(false);
+                }
+              }}
+              onDrop={dropPaletteBlock}
+            >
+              <header className="canvas-heading">
+                <div>
+                  <span id="rule-canvas-heading">RULE CANVAS</span>
+                  <small>Build one complete spending path.</small>
+                </div>
+                <span>{draftBlockCount === 0 ? "EMPTY" : `${draftBlockCount} BLOCKS`}</span>
+              </header>
+
+              <div className="canvas-body">
+                {draftBlockCount === 0 ? (
+                  <div className="canvas-empty">
+                    <Plus size={22} aria-hidden="true" />
+                    <strong>DROP BLOCKS HERE</strong>
+                    <small>Start with a key. Add Multisig or Time delay only if needed.</small>
+                  </div>
+                ) : (
+                  <div className="rule-flow">
+                    <div className="signing-slot">
+                      {multisig ? (
+                        <article className="canvas-block canvas-multisig">
+                          <header>
+                            <span>
+                              <UsersRound size={18} aria-hidden="true" />
+                              <strong>MULTISIG</strong>
+                            </span>
+                            <button
+                              className="block-remove"
+                              type="button"
+                              onClick={removeMultisigBlock}
+                              aria-label="Remove Multisig block"
+                            >
+                              <X size={16} aria-hidden="true" />
+                            </button>
+                          </header>
+
+                          <div className="multisig-config">
+                            <label>
+                              <span>Signatures required</span>
+                              <select
+                                value={threshold}
+                                onChange={(event) => setThreshold(Number(event.target.value))}
+                                disabled={selectedKeyIds.length === 0}
+                              >
+                                {Array.from(
+                                  { length: Math.max(1, selectedKeyIds.length) },
+                                  (_, index) => (
+                                    <option value={index + 1} key={index + 1}>
+                                      {index + 1}
+                                    </option>
+                                  ),
+                                )}
+                              </select>
+                            </label>
+                            <span className="multisig-count">
+                              OF <strong>{selectedKeyIds.length}</strong> KEYS
+                            </span>
+                          </div>
+
+                          <div className="canvas-signers">
+                            {selectedKeyIds.length === 0 ? (
+                              <p>Drop 2–10 key blocks here.</p>
+                            ) : (
+                              selectedKeyIds.map((id) => {
+                                const row = rowById.get(id);
+                                return (
+                                  <div className="canvas-signer" data-role={row?.role} key={id}>
+                                    <span className="role-mark">{row?.role ?? "key"}</span>
+                                    <strong>{row?.label.trim() || "Unnamed key"}</strong>
+                                    <code>{shortKey(row?.publicKey ?? "")}</code>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeDraftKey(id)}
+                                      aria-label={`Remove ${row?.label.trim() || "key"} from draft rule`}
+                                    >
+                                      <X size={14} aria-hidden="true" />
+                                    </button>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </article>
+                      ) : (
+                        selectedKeyIds.map((id) => {
+                          const row = rowById.get(id);
+                          return (
+                            <article className="canvas-block canvas-key" data-role={row?.role} key={id}>
+                              <header>
+                                <span>
+                                  <KeyRound size={17} aria-hidden="true" />
+                                  <span className="role-mark">{row?.role ?? "key"}</span>
+                                </span>
+                                <button
+                                  className="block-remove"
+                                  type="button"
+                                  onClick={() => removeDraftKey(id)}
+                                  aria-label={`Remove ${row?.label.trim() || "key"} from draft rule`}
+                                >
+                                  <X size={16} aria-hidden="true" />
+                                </button>
+                              </header>
+                              <strong>{row?.label.trim() || "Unnamed key"}</strong>
+                              <code>{shortKey(row?.publicKey ?? "")}</code>
+                            </article>
+                          );
+                        })
                       )}
-                    </select>
-                    <small>of {selectedKeyIds.length} selected</small>
-                  </label>
-                ) : (
-                  <p className="option-note">One selected key can sign.</p>
-                )}
-              </div>
 
-              <div className="option-block">
-                <label className="option-switch">
-                  <input
-                    type="checkbox"
-                    checked={timeDelay}
-                    onChange={(event) => setTimeDelay(event.target.checked)}
-                  />
-                  <span>
-                    <strong>Time delay</strong>
-                    <small>Prevent this rule from spending before a date.</small>
-                  </span>
-                </label>
-                {timeDelay ? (
-                  <label className="date-field">
-                    <span>Available from · 00:00 UTC</span>
-                    <input
-                      type="date"
-                      value={unlockDate}
-                      onChange={(event) => setUnlockDate(event.target.value)}
-                      min={firstFutureRuleDate()}
-                      max="2038-01-19"
-                    />
-                    <small>
-                      Bitcoin uses median time past; activation may be later.
-                    </small>
-                  </label>
-                ) : (
-                  <p className="option-note">This rule can spend immediately.</p>
+                      {!multisig && selectedKeyIds.length > 1 ? (
+                        <p className="canvas-warning">
+                          Multiple keys need the Multisig block.
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {timeDelay && (multisig || selectedKeyIds.length > 0) ? (
+                      <span className="canvas-connector" aria-hidden="true">AND</span>
+                    ) : null}
+
+                    {timeDelay ? (
+                      <article className="canvas-block canvas-time-delay">
+                        <header>
+                          <span>
+                            <Clock3 size={18} aria-hidden="true" />
+                            <strong>TIME DELAY</strong>
+                          </span>
+                          <button
+                            className="block-remove"
+                            type="button"
+                            onClick={removeTimeDelayBlock}
+                            aria-label="Remove Time delay block"
+                          >
+                            <X size={16} aria-hidden="true" />
+                          </button>
+                        </header>
+                        <label className="canvas-date-field">
+                          <span>Available from · 00:00 UTC</span>
+                          <input
+                            type="date"
+                            value={unlockDate}
+                            onChange={(event) => setUnlockDate(event.target.value)}
+                            min={firstFutureRuleDate()}
+                            max="2038-01-19"
+                          />
+                          <small>Median time past can make activation later.</small>
+                        </label>
+                      </article>
+                    ) : null}
+                  </div>
                 )}
               </div>
-            </div>
+            </section>
+
+            <p className="role-safety">
+              <strong>Owner / Heir marks are visual only.</strong> The blocks in this canvas
+              define spending. A key without Time delay can spend immediately.
+            </p>
 
             <div className="add-rule-row">
               <p role="status" aria-live="polite">{draftMessage ?? "Ready to add."}</p>
