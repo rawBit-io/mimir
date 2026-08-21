@@ -1,78 +1,61 @@
 # Mimir
 
-Mimir is a one-page, offline specification-sheet builder for Bitcoin recovery
-policies. Register up to five compressed public keys, then describe up to five
-alternative spending paths by choosing signers, a `K-of-N` threshold, and an
-optional absolute UTC date. The exact native P2WSH Miniscript, Bitcoin Script
-ASM, address, and normalization result update live.
+Mimir is a one-page, offline builder for a deliberately small Bitcoin Script
+policy. Register up to five compressed public keys, then describe up to five
+alternative spending clauses by choosing keyholders, a `K-of-N` signature
+threshold, and an optional absolute UTC date. Mimir emits the exact native
+SegWit v0 P2WSH Bitcoin Script, address, script bytes, and recovery metadata.
 
-## Visual paths, read-once script
+## Restricted Direct Script
 
-Users describe the policy naturally:
-
-```text
-PATH A OR PATH B OR ... OR PATH E
-```
-
-A public key may appear in several visual paths. On every tree change, Mimir
-builds the complete Boolean policy and searches for an equivalent sane
-Miniscript in which every public key check appears at most once. Common keys
-are factored, redundant conditions are removed, and compatible threshold/date
-ladders are collapsed automatically. If no verified read-once form is found,
-the combination is rejected without producing an address.
-
-For example:
+Mimir does not generate arbitrary Bitcoin Script and does not use Miniscript.
+The complete policy language is:
 
 ```text
-Owner
-OR
-after(T) AND 2-of-3(Owner, Recovery A, Recovery B)
+POLICY = CLAUSE 1 OR CLAUSE 2 OR ... OR CLAUSE 5
+
+CLAUSE = [optional absolute CLTV date] AND [one key or K-of-N multisig]
 ```
 
-normalizes to the equivalent policy:
+The compiler emits this as a literal, right-nested conditional:
 
 ```text
-Owner
-OR
-after(T) AND 2-of-2(Recovery A, Recovery B)
+OP_IF
+    CLAUSE 1
+OP_ELSE
+    OP_IF
+        CLAUSE 2
+    OP_ELSE
+        CLAUSE 3
+    OP_ENDIF
+OP_ENDIF
 ```
 
-The interface shows both the authored paths and the normalization result. It
-does not ask the user to construct a Miniscript expression tree.
+There is no Boolean rewriting, key factoring, or hidden policy
+optimization. Every authored clause becomes one Script branch. If a public key
+is selected in several clauses, it appears several times in the Script. The
+formatted ASM is therefore intended to remain directly auditable against the
+clause editor.
 
-The compiler accepts only policies it can prove equivalent within its bounded
-five-key/five-path model. It checks every signer subset at every authored and
-emitted locktime boundary against the symbolic satisfactions of the generated
-Miniscript, requires top-level and sublevel sanity, and verifies that each
-emitted public key occurs once. This is a strong compiler guard, not a
-substitute for independent Bitcoin tooling and a recovery rehearsal.
+Single-key clauses use `OP_CHECKSIG`. Threshold clauses use the standard
+`K <keys...> N OP_CHECKMULTISIG` form. Delayed clauses prepend
+`<timestamp> OP_CHECKLOCKTIMEVERIFY OP_DROP`. Alternative branches use minimal
+`0` and `1` witness selectors documented in the exported manifest.
 
-Key labels are descriptive only. The selected signers, threshold, and
-date define spending. Dates are absolute calendar dates at `00:00:00 UTC`, not
-relative durations from funding.
+The implemented surface provides:
 
-The current implementation provides:
+- one to five valid compressed secp256k1 public keys;
+- one to five alternative clauses;
+- one signature threshold and at most one absolute date per clause;
+- deliberate reuse of keys across any clauses;
+- live, formatted Bitcoin Script ASM and exact witness-script hex;
+- Mainnet, Testnet, Signet, and Regtest P2WSH addresses;
+- branch-selector, signature-order, and `CHECKMULTISIG` dummy metadata;
+- deterministic canonical JSON export; and
+- no private-key, seed, xpub, derivation, signing, persistence, or network input.
 
-- up to five valid compressed secp256k1 public keys;
-- up to five alternative visual paths;
-- a compact paper-style keyholder and spending-clause editor;
-- direct click, keyboard, and touch controls for clause membership, signature
-  threshold, and effective date;
-- implicit policy logic: each added path is an alternative, while a timelock is
-  automatically required by the path containing it;
-- inline `K-of-N` and UTC-date configuration inside each branch;
-- free reuse of a registered key across visual paths;
-- fail-closed read-once normalization on every complete tree change;
-- live exact Miniscript, Script ASM, P2WSH address, descriptor, script bytes,
-  invariants, warnings, and canonical JSON export;
-- Mainnet, Testnet, Signet, and Regtest selection beside the address artifact; and
-- public demo keys that are visibly unsafe and blocked from address copying or
-  JSON export.
-
-Mimir accepts public data only—never private keys, seed phrases, extended keys,
-fingerprints, or derivation paths. The concise current contract is
-[`mimir_v6_spec.md`](mimir_v6_spec.md). Earlier implemented contracts remain in
-the repository as historical specifications.
+The concise implementation contract is
+[`mimir_v7_spec.md`](mimir_v7_spec.md).
 
 ## Run locally
 
@@ -99,15 +82,21 @@ connections.
 npm test
 ```
 
-The suite builds the worker, renders the page, retains the v1–v5 compiler
-tests, and verifies v6 normalization, canonical output, exact artifacts,
-fail-closed rejection, and signer/time semantic equivalence.
+The tests build and render the application, enumerate all 160 possible
+single-clause key-set/threshold/timing shapes through five keys, and interpret
+the generated bytes symbolically for every signer subset and relevant time
+boundary. Multi-clause tests cover repeated and partially overlapping key sets.
 
 ## Safety status
 
-Mimir emits native SegWit v0 P2WSH, not Taproot. The address is currently an
-output artifact; Mimir does not yet build the planned Bitcoin Core funding
-command, OP_RETURN payload, or dust transaction. It is preview software. Verify
-the descriptor, script, address, threshold, timelocks, and recovery procedure
-independently on Regtest or Signet before funding. Never paste a private key or
-seed phrase into this app.
+Mimir emits native P2WSH, not Taproot. For `OP_CHECKMULTISIG`, the spending
+witness must include the consensus-required empty dummy item and signatures in
+public-key order. A delayed branch requires transaction `nLockTime` at least
+equal to its timestamp and a non-final `nSequence` on the spending input.
+
+The current tests are strong compiler checks, not Bitcoin Core execution.
+Before mainnet use, reproduce the witness-script bytes and address with
+independent tooling, execute every valid and invalid branch boundary against a
+Bitcoin Core Regtest node, and retain the policy JSON with the recovery setup.
+The planned Bitcoin Core funding/recovery command, OP_RETURN metadata, and dust
+transaction workflow are not implemented yet.

@@ -38,7 +38,7 @@ test("server-renders the compact specification-sheet interface", async () => {
   assert.match(html, />COMPILED ARTIFACTS<\/h2>/);
   assert.match(html, />VERIFICATION<\/h2>/);
   assert.match(html, /compressed public keys, entered by hand/);
-  assert.match(html, /any single complete clause is sufficient to spend/);
+  assert.match(html, /each clause becomes one explicit Script branch/);
   assert.match(html, /KEYHOLDERS IN THIS CLAUSE/);
   assert.match(html, />SIGNATURES<\/legend>/);
   assert.match(html, />EFFECTIVE<\/legend>/);
@@ -59,7 +59,7 @@ test("server-renders the compact specification-sheet interface", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
-test("source keeps the read-once normalizer, public-only input, and offline runtime behind the sheet ui", async () => {
+test("source keeps the restricted Direct Script compiler, public-only input, and offline runtime behind the sheet ui", async () => {
   const [page, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -84,16 +84,16 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   assert.match(page, /Address copy and JSON export are blocked/);
   assert.match(page, /disabled=\{addressAndExportBlocked\}/);
   assert.match(page, /DOWNLOAD POLICY JSON/);
-  assert.match(page, /read-once-normalizer/);
-  assert.match(page, /compileReadOncePolicy/);
-  assert.match(page, /mimir-read-once-policy-request/);
+  assert.match(page, /direct-script-policy/);
+  assert.match(page, /compileDirectScriptPolicy/);
+  assert.match(page, /mimir-direct-script-policy-request/);
   assert.match(page, /canonical_manifest/);
   assert.match(page, /new Blob\(\[live\.compiled\.canonical_manifest\]/);
-  assert.match(page, /MAX_READ_ONCE_KEYS/);
-  assert.match(page, /MAX_READ_ONCE_PATHS/);
+  assert.match(page, /MAX_DIRECT_SCRIPT_KEYS/);
+  assert.match(page, /MAX_DIRECT_SCRIPT_CLAUSES/);
   assert.doesNotMatch(page, /DRAG_MIME|draggable=|onDragStart|onDragOver|onDrop|dataTransfer/);
   assert.match(page, /type="date"/);
-  assert.match(page, /max="2038-01-19"/);
+  assert.match(page, /max="2106-02-07"/);
   assert.match(page, /value === "bitcoin" \|\| value === "testnet" \|\| value === "signet" \|\| value === "regtest"/);
   assert.doesNotMatch(page, /network-button/);
   assert.doesNotMatch(page, /type="checkbox"|lucide-react|window\.confirm/);
@@ -110,5 +110,7 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   assert.match(layout, /index: false, follow: false/);
   assert.doesNotMatch(layout, /next\/font|codex-preview|_sites-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton|lucide-react/);
+  assert.doesNotMatch(page, /MINISCRIPT|read-once/i);
+  assert.doesNotMatch(packageJson, /bitcoinerlab|mini(?:script)/i);
   await assert.rejects(access(new URL("../app/_sites-preview", import.meta.url)));
 });

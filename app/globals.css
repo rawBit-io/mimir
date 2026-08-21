@@ -167,9 +167,9 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
 .network-select { margin-left: auto; }
 .network-select select { min-height: 27px; border: 1px solid #c3bfb1; background: transparent; padding: 3px 26px 3px 8px; color: var(--text); font-size: 9.5px; letter-spacing: .1em; }
 
-.normalization-note { margin-bottom: 14px; border-left: 3px solid var(--green); background: var(--green-soft); padding: 12px 14px; }
-.normalization-note strong { color: var(--green); font-size: 11px; }
-.normalization-note p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.direct-construction-note { margin-bottom: 14px; border-left: 3px solid var(--green); background: var(--green-soft); padding: 12px 14px; }
+.direct-construction-note strong { color: var(--green); font-size: 11px; }
+.direct-construction-note p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 .verification-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--ink); border-left: 1px solid var(--rule-soft); }
 .verification-grid > div { display: flex; gap: 8px; min-height: 66px; border-right: 1px solid var(--rule-soft); border-bottom: 1px solid var(--rule-soft); padding: 11px 13px; }
 .verification-grid > div > span { color: var(--green); font-size: 11px; }

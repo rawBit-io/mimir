@@ -2,18 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  MAX_READ_ONCE_KEYS,
-  MAX_READ_ONCE_PATHS,
-  TEMPLATE_ID_READ_ONCE,
-  compileReadOncePolicy,
-  unixFromReadOnceDate,
-  validateReadOncePublicKey,
-  type CompiledReadOncePolicy,
-  type ReadOnceNetwork,
-  type ReadOncePolicyRequest,
-} from "../lib/read-once-normalizer";
+  MAX_DIRECT_SCRIPT_CLAUSES,
+  MAX_DIRECT_SCRIPT_KEYS,
+  TEMPLATE_ID_DIRECT_SCRIPT,
+  compileDirectScriptPolicy,
+  unixFromDirectScriptDate,
+  validateDirectScriptPublicKey,
+  type CompiledDirectScriptPolicy,
+  type DirectScriptNetwork,
+  type DirectScriptPolicyRequest,
+} from "../lib/direct-script-policy";
 
-type UiNetwork = ReadOnceNetwork;
+type UiNetwork = DirectScriptNetwork;
 type KeyRow = { id: string; label: string; publicKey: string };
 type SigningMode = "key" | "multisig" | null;
 type PolicyBranch = {
@@ -28,7 +28,7 @@ type FieldState = {
   publicKeyError: string | null;
   normalizedPublicKey: string | null;
 };
-type LiveResult = { compiled: CompiledReadOncePolicy | null; message: string | null };
+type LiveResult = { compiled: CompiledDirectScriptPolicy | null; message: string | null };
 
 const DEMO_PUBLIC_KEYS = [
   "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
@@ -137,7 +137,7 @@ function validateRows(rows: KeyRow[]): Map<string, FieldState> {
     labelCounts.set(identity, (labelCounts.get(identity) ?? 0) + 1);
   }
   const publicKeys = rows.map((row) => {
-    try { return validateReadOncePublicKey(row.publicKey); } catch { return null; }
+    try { return validateDirectScriptPublicKey(row.publicKey); } catch { return null; }
   });
   const publicKeyCounts = new Map<string, number>();
   for (const publicKey of publicKeys) {
@@ -173,7 +173,7 @@ function compileTree(rows: KeyRow[], branches: PolicyBranch[], network: UiNetwor
       if (branch.threshold < 1 || branch.threshold > branch.keyRowIds.length) {
         throw new Error(`clause 2.${index + 1} has an invalid signature threshold`);
       }
-      if (branch.unlockDate) unixFromReadOnceDate(branch.unlockDate);
+      if (branch.unlockDate) unixFromDirectScriptDate(branch.unlockDate);
     });
 
     const usedIds = [...new Set(active.flatMap((branch) => branch.keyRowIds))];
@@ -181,13 +181,13 @@ function compileTree(rows: KeyRow[], branches: PolicyBranch[], network: UiNetwor
       const row = rowById.get(id);
       if (!row) throw new Error("a clause references a removed keyholder");
       if (!row.label.trim()) throw new Error("every keyholder used by a clause needs a label");
-      validateReadOncePublicKey(row.publicKey);
+      validateDirectScriptPublicKey(row.publicKey);
     }
 
     const completeRows = rows.flatMap((row) => {
       const label = row.label.trim().normalize("NFC");
       if (!label || !row.publicKey.trim()) return [];
-      try { return [{ row, label, publicKey: validateReadOncePublicKey(row.publicKey) }]; }
+      try { return [{ row, label, publicKey: validateDirectScriptPublicKey(row.publicKey) }]; }
       catch { return []; }
     }).sort((left, right) =>
       left.publicKey.localeCompare(right.publicKey) || left.label.localeCompare(right.label));
@@ -200,27 +200,27 @@ function compileTree(rows: KeyRow[], branches: PolicyBranch[], network: UiNetwor
     const requestIdByRowId = new Map(completeRows.map((entry, index) => [
       entry.row.id, `key-${String(index + 1).padStart(2, "0")}`,
     ]));
-    const request: ReadOncePolicyRequest = {
-      format: "mimir-read-once-policy-request",
-      version: 6,
+    const request: DirectScriptPolicyRequest = {
+      format: "mimir-direct-script-policy-request",
+      version: 7,
       network,
-      template_id: TEMPLATE_ID_READ_ONCE,
+      template_id: TEMPLATE_ID_DIRECT_SCRIPT,
       keys: completeRows.map((entry, index) => ({
         id: `key-${String(index + 1).padStart(2, "0")}`,
         label: entry.label,
         public_key: entry.publicKey,
       })),
-      paths: active.map((branch) => ({
+      clauses: active.map((branch) => ({
         key_ids: branch.keyRowIds.map((rowId) => {
           const id = requestIdByRowId.get(rowId);
           if (!id) throw new Error("complete every keyholder used in a clause");
           return id;
         }),
         threshold: branch.keyRowIds.length === 1 ? 1 : branch.threshold,
-        unlock_unix: branch.unlockDate ? unixFromReadOnceDate(branch.unlockDate) : null,
+        unlock_unix: branch.unlockDate ? unixFromDirectScriptDate(branch.unlockDate) : null,
       })),
     };
-    return { compiled: compileReadOncePolicy(request), message: null };
+    return { compiled: compileDirectScriptPolicy(request), message: null };
   } catch (error) {
     return { compiled: null, message: error instanceof Error ? error.message : "the policy could not be compiled" };
   }
@@ -269,20 +269,38 @@ function formatBitcoinScript(asm: string): string {
     current = [];
   };
 
-  tokens.forEach((token, index) => {
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
     if (control.has(token)) {
       flush();
       if (token === "OP_ELSE" || token === "OP_ENDIF") depth = Math.max(0, depth - 1);
       lines.push(`${"    ".repeat(depth)}${token}`);
       if (token === "OP_IF" || token === "OP_NOTIF" || token === "OP_ELSE") depth += 1;
-      return;
+      continue;
+    }
+
+    if (/^(?:[1-9]|1[0-6])$/.test(token) && /^<[0-9a-f]{66}>$/i.test(tokens[index + 1] ?? "")) {
+      let cursor = index + 1;
+      const publicKeys: string[] = [];
+      while (/^<[0-9a-f]{66}>$/i.test(tokens[cursor] ?? "")) {
+        publicKeys.push(tokens[cursor]);
+        cursor += 1;
+      }
+      if (/^(?:[1-9]|1[0-6])$/.test(tokens[cursor] ?? "") && tokens[cursor + 1] === "OP_CHECKMULTISIG") {
+        flush();
+        lines.push(`${"    ".repeat(depth)}${token}`);
+        publicKeys.forEach((publicKey) => lines.push(`${"    ".repeat(depth + 1)}${publicKey}`));
+        lines.push(`${"    ".repeat(depth)}${tokens[cursor]} OP_CHECKMULTISIG`);
+        index = cursor + 1;
+        continue;
+      }
     }
 
     current.push(token);
     const next = tokens[index + 1];
     const continuesLocktime = token === "OP_CHECKLOCKTIMEVERIFY" && (next === "OP_VERIFY" || next === "OP_DROP" || next === "OP_0NOTEQUAL");
     if (!continuesLocktime && (lineEnd.has(token) || control.has(next))) flush();
-  });
+  }
   flush();
   return lines.join("\n");
 }
@@ -321,9 +339,7 @@ export default function Home() {
   const hasNonFutureDelay = useMemo(() => branches.some((branch) =>
     branch.unlockDate !== null && branch.unlockDate < futureMinimum), [branches, futureMinimum]);
   const addressAndExportBlocked = hasDemoKey || hasNonFutureDelay;
-  const opcodeCount = live.compiled
-    ? live.compiled.asm.split(/\s+/).filter((token) => token.startsWith("OP_")).length
-    : 0;
+  const opcodeCount = live.compiled?.opcode_count ?? 0;
 
   function updateRow(id: string, patch: Partial<Omit<KeyRow, "id">>) {
     setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
@@ -336,7 +352,7 @@ export default function Home() {
   }
 
   function addKeyRow() {
-    if (rows.length >= MAX_READ_ONCE_KEYS) return;
+    if (rows.length >= MAX_DIRECT_SCRIPT_KEYS) return;
     const id = `key-row-${nextKeyId.current}`;
     nextKeyId.current += 1;
     setRows((current) => [...current, { id, label: "", publicKey: "" }]);
@@ -358,7 +374,7 @@ export default function Home() {
       setFeedback("complete the current clause before adding another");
       return;
     }
-    if (branches.length >= MAX_READ_ONCE_PATHS) return;
+    if (branches.length >= MAX_DIRECT_SCRIPT_CLAUSES) return;
     const id = `branch-${nextBranchId.current}`;
     nextBranchId.current += 1;
     setBranches((current) => [...current, makeBranch(id)]);
@@ -478,7 +494,7 @@ export default function Home() {
     ? addressAndExportBlocked ? "warning" : "valid"
     : live.message ? "error" : "draft";
   const revision = live.compiled ? live.compiled.policy_manifest_sha256.slice(0, 12) : "not issued";
-  const canAddClause = branches.length < MAX_READ_ONCE_PATHS && branches.every(branchComplete);
+  const canAddClause = branches.length < MAX_DIRECT_SCRIPT_CLAUSES && branches.every(branchComplete);
 
   return (
     <main className="sheet-shell">
@@ -491,7 +507,7 @@ export default function Home() {
           </div>
           <div className="sheet-meta">
             <div><span>REVISION</span><strong>{revision}</strong></div>
-            <div><span>TEMPLATE</span><strong>read-once paths v1</strong></div>
+            <div><span>TEMPLATE</span><strong>direct P2WSH v1</strong></div>
             <div><span>STATUS</span><strong className={`status-stamp is-${statusTone}`}><i></i>{statusLabel}</strong></div>
             <div className="sheet-actions"><span>SESSION</span><p>
               <button type="button" onClick={requestDemo} onBlur={() => setArmed(null)}>{armed === "demo" ? "REALLY LOAD?" : "DEMO"}</button>
@@ -504,7 +520,7 @@ export default function Home() {
         {hasNonFutureDelay ? <div className="sheet-alert is-error" role="alert"><strong>LOCK DATE REQUIRES REVIEW</strong><span>A clause is already active or past. Exact artifacts remain visible; address copy and export are blocked.</span></div> : null}
 
         <section className="sheet-section keyholder-section" aria-labelledby="keyholders-heading">
-          <header className="section-title"><span>§1</span><h2 id="keyholders-heading">KEYHOLDERS</h2><p>compressed public keys, entered by hand</p><i></i><b>{rows.length} of {MAX_READ_ONCE_KEYS}</b></header>
+          <header className="section-title"><span>§1</span><h2 id="keyholders-heading">KEYHOLDERS</h2><p>compressed public keys, entered by hand</p><i></i><b>{rows.length} of {MAX_DIRECT_SCRIPT_KEYS}</b></header>
           <div className="key-table-head" aria-hidden="true"><span>NO</span><span>LABEL</span><span>PUBLIC KEY · secp256k1</span><span>STATE</span><span></span></div>
           <div className="key-table">{rows.map((row, index) => {
             const state = fieldState.get(row.id);
@@ -527,11 +543,11 @@ export default function Home() {
                 aria-label={`remove ${row.label.trim() || `keyholder ${index + 1}`}`} aria-disabled={usedByBranch.has(row.id)}>×</button>
             </div>;
           })}</div>
-          <button className="outline-action" type="button" onClick={addKeyRow} disabled={rows.length >= MAX_READ_ONCE_KEYS}>+ {rows.length >= MAX_READ_ONCE_KEYS ? "KEYHOLDER LIMIT REACHED" : "ADD KEYHOLDER"}</button>
+          <button className="outline-action" type="button" onClick={addKeyRow} disabled={rows.length >= MAX_DIRECT_SCRIPT_KEYS}>+ {rows.length >= MAX_DIRECT_SCRIPT_KEYS ? "KEYHOLDER LIMIT REACHED" : "ADD KEYHOLDER"}</button>
         </section>
 
         <section className="sheet-section clauses-section" aria-labelledby="clauses-heading">
-          <header className="section-title"><span>§2</span><h2 id="clauses-heading">SPENDING CLAUSES</h2><p>any single complete clause is sufficient to spend</p><i></i><b>{branches.length} of {MAX_READ_ONCE_PATHS}</b></header>
+          <header className="section-title"><span>§2</span><h2 id="clauses-heading">SPENDING CLAUSES</h2><p>each clause becomes one explicit Script branch</p><i></i><b>{branches.length} of {MAX_DIRECT_SCRIPT_CLAUSES}</b></header>
           <div className="clause-list">{branches.map((branch, index) => {
             const locked = Boolean(branch.unlockDate);
             return <article className={`clause${locked ? " is-delayed" : ""}`} key={branch.id}>
@@ -557,7 +573,7 @@ export default function Home() {
                 <fieldset className="effective-picker"><legend>EFFECTIVE</legend><div className="effective-row">
                   <span className="segmented-control"><button type="button" className={!locked ? "is-selected" : ""} onClick={() => setImmediate(branch.id)} aria-pressed={!locked}>AT ONCE</button><button type="button" className={locked ? "is-selected" : ""} onClick={() => setDelayed(branch.id)} aria-pressed={locked}>FROM DATE</button></span>
                   {branch.unlockDate ? <label><span className="sr-only">clause {index + 1} unlock date</span><input type="date"
-                    value={branch.unlockDate} min={futureMinimum} max="2038-01-19"
+                    value={branch.unlockDate} min={futureMinimum} max="2106-02-07"
                     onChange={(event) => updateBranch(branch.id, (current) => ({ ...current, unlockDate: event.target.value }))} /></label> : null}
                 </div></fieldset>
               </div>
@@ -574,20 +590,18 @@ export default function Home() {
           {!live.compiled && !live.message ? <div className="awaiting-sheet"><strong>AWAITING A COMPLETE CLAUSE</strong><span>Select verified keyholders in §2 to compile the policy.</span></div> : null}
 
           {live.compiled ? <div className="artifact-stack">
-            <section className="artifact-block"><header><h3>MINISCRIPT</h3><span></span><CopyButton value={live.compiled.miniscript} label="Miniscript" /></header><pre><code>{live.compiled.miniscript}</code></pre></section>
             <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3><span>{live.compiled.witness_script_bytes} / 3600 bytes · {opcodeCount} opcodes</span><CopyButton value={formattedAsm} label="Bitcoin Script ASM" /></header><pre className="asm-code" aria-label="Formatted Bitcoin Script"><code>{formattedAsm}</code></pre></section>
             <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS · OUTPUT ARTIFACT</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
               const value = event.currentTarget.value;
               if (isUiNetwork(value)) setNetwork(value);
             }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><CopyButton value={live.compiled.address} label="P2WSH address" disabled={addressAndExportBlocked} /></header><p>{live.compiled.address}</p><small>The Bitcoin Core funding command belongs to the next workflow step.</small></section>
-            <section className="artifact-block"><header><h3>DESCRIPTOR</h3><span>checksummed</span><CopyButton value={live.compiled.descriptor} label="descriptor" /></header><pre><code>{live.compiled.descriptor}</code></pre></section>
           </div> : null}
         </section>
 
         <section className="sheet-section verification-section" aria-labelledby="verification-heading">
           <header className="section-title"><span>§4</span><h2 id="verification-heading">VERIFICATION</h2><p>compiler checks for the exact issued artifacts</p><i></i></header>
           {live.compiled ? <>
-            <div className="normalization-note"><strong>{live.compiled.manifest.normalization.authored_key_occurrences} visual key uses → {live.compiled.manifest.normalization.emitted_key_checks} read-once checks</strong><p>{live.compiled.manifest.normalization.notes.join(" ")}</p></div>
+            <div className="direct-construction-note"><strong>{live.compiled.manifest.construction.authored_clauses} authored clauses → {live.compiled.manifest.construction.emitted_branches} explicit Script branches</strong><p>No policy rewriting or key factoring. Every clause and every repeated public-key occurrence remains visible in the script.</p></div>
             <div className="verification-grid">{live.compiled.invariants.map((invariant) => <div key={invariant.id}><span>{invariant.ok ? "✓" : "×"}</span><p><strong>{invariant.ok ? "passed" : "failed"}</strong>{invariant.label}</p></div>)}</div>
             <details className="technical-details"><summary>TECHNICAL DETAILS · HEX · HASH</summary><div>
               <TechnicalItem label="witness script · hex" value={live.compiled.witness_script_hex} />
@@ -602,7 +616,7 @@ export default function Home() {
         <footer className="sheet-footer">
           <div><span>REVIEWED BY</span><i></i></div>
           <div><span>REHEARSED ON</span><i></i></div>
-          <p>Generated locally from public keys only. Nothing is signed, stored, or transmitted. Reproduce the descriptor with independent tooling and rehearse every clause on {network} before funding.</p>
+          <p>Generated locally from public keys only. Nothing is signed, stored, or transmitted. Reproduce the witness script and address independently, then rehearse every branch on {network} before funding.</p>
         </footer>
       </article>
     </main>
