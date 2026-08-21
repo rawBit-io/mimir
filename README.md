@@ -14,8 +14,8 @@ Users describe the policy naturally:
 PATH A OR PATH B OR ... OR PATH E
 ```
 
-A public key may appear in several visual paths. Before a path can be saved,
-Mimir builds the complete Boolean policy and searches for an equivalent sane
+A public key may appear in several visual paths. On every tree change, Mimir
+builds the complete Boolean policy and searches for an equivalent sane
 Miniscript in which every public key check appears at most once. Common keys
 are factored, redundant conditions are removed, and compatible threshold/date
 ladders are collapsed automatically. If no verified read-once form is found,
@@ -47,17 +47,20 @@ Miniscript, requires top-level and sublevel sanity, and verifies that each
 emitted public key occurs once. This is a strong compiler guard, not a
 substitute for independent Bitcoin tooling and a recovery rehearsal.
 
-`OWNER` and `RECOVERY` marks are visual labels only. Saved signers, threshold,
-and date define spending. Dates are absolute calendar dates at `00:00:00 UTC`,
-not relative durations from funding.
+Key labels are descriptive only. The blocks, selected signers, threshold, and
+date define spending. Dates are absolute calendar dates at `00:00:00 UTC`, not
+relative durations from funding.
 
 The current implementation provides:
 
 - up to five valid compressed secp256k1 public keys;
 - up to five alternative visual paths;
-- one path composer with signer selection, `K-of-N`, and optional UTC date;
+- a terminal policy canvas with a block palette and an implicit OR root;
+- click, keyboard, touch, and native drag/drop placement for keys, multisig,
+  timelock, AND, and OR controls;
+- inline `K-of-N` and UTC-date configuration inside each branch;
 - free reuse of a registered key across visual paths;
-- fail-closed read-once normalization before a path is saved;
+- fail-closed read-once normalization on every complete tree change;
 - live exact Miniscript, Script ASM, P2WSH address, descriptor, script bytes,
   invariants, warnings, and canonical JSON export;
 - Regtest and Signet selection; and

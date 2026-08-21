@@ -21,8 +21,8 @@ Any one satisfied path can spend:
 PATH 1 OR PATH 2 OR ... OR PATH 5
 ```
 
-A registered key may be selected again in any later visual path. Owner and
-Recovery marks are visual labels and do not enter the policy.
+A registered key may be selected again in any other visual path. Labels are
+descriptive and do not grant spending rights.
 
 ## 2. Read-once acceptance rule
 
@@ -59,17 +59,23 @@ form exists, compilation fails and no address is produced.
 
 The single terminal-style page has four working areas:
 
-1. `[1] KEYRING` accepts labels and compressed public keys.
-2. `[2] COMPOSE PATH` selects keys, chooses `K`, and optionally sets a date.
-3. The pre-commit panel trial-compiles the complete policy. `[ ADD PATH ]` is
-   enabled only when the new combination normalizes successfully.
-4. `[3] VISUAL PATHS` shows what the user authored. `STDOUT` shows the authored
-   policy, normalization counts and notes, exact Miniscript, Script ASM,
-   address, descriptor, script hex, checks, warnings, and export.
+1. `01 KEYS` accepts labels and compressed public keys.
+2. `02 POLICY` provides AND, OR, MULTISIG, TIMELOCK, and reusable key blocks.
+   The user selects an OR-branch slot, then clicks a block or drags it into that
+   branch. An individual key creates a signing block; adding another key turns
+   it into multisig. `K` and date controls live inside the resulting block.
+3. `03 SPENDING PATHS` enumerates the alternatives derived from the visual
+   tree. The root is always OR. Within one branch, its timelock and signing
+   condition are joined by AND.
+4. `LIVE BITCOIN SCRIPT` shows the authored policy, normalization counts and
+   notes, exact Miniscript, Script ASM, address, descriptor, script hex,
+   checks, warnings, and export.
 
-Saved use never disables a key. Every checkbox changes only the current draft
-path. Removing a saved path rebuilds the policy. There is no separate compile
-button.
+Click, touch, and keyboard interaction provide the complete workflow; native
+drag-and-drop is an additional desktop interaction. A key stays reusable in
+every branch. MULTISIG and TIMELOCK can each occur at most once per branch.
+OR adds another branch, up to five. An incomplete or unsupported tree remains
+editable but emits no address. There is no separate compile or save button.
 
 The page exposes Regtest and Signet. Mainnet remains available only through the
 compiler API. The demo deliberately reuses Owner across four visual paths and
@@ -96,7 +102,7 @@ Private keys, seed phrases, WIF, x-only or uncompressed keys, extended keys,
 fingerprints, and derivation paths are outside the input model.
 
 The compiler accepts supported historical dates for reproducibility. The page
-requires a future date for newly saved paths and caps the picker at
+requires a future date for newly authored paths and caps the picker at
 `2038-01-19`. If an open page crosses a saved unlock date, exact artifacts stay
 visible for review, while address copying and export are blocked. Export
 rechecks the current UTC date at click time.

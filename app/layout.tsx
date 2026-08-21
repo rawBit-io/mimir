@@ -25,9 +25,9 @@ export async function generateMetadata(): Promise<Metadata> {
       type: "website",
       images: [
         {
-          url: `${origin}/og.png`,
-          width: 1733,
-          height: 907,
+          url: `${origin}/og-v2.png`,
+          width: 1731,
+          height: 909,
           alt: "Mimir read-once P2WSH policy normalizer",
         },
       ],
@@ -36,7 +36,7 @@ export async function generateMetadata(): Promise<Metadata> {
       card: "summary_large_image",
       title: "Mimir — Bitcoin Script Builder",
       description: "read-once p2wsh · repeated visual keys · verified normalization",
-      images: [`${origin}/og.png`],
+      images: [`${origin}/og-v2.png`],
     },
   };
 }

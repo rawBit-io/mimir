@@ -30,32 +30,33 @@ test("server-renders the terminal session interface", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>Mimir — Bitcoin Script Builder<\/title>/);
-  assert.match(html, /mimir v6/);
-  assert.match(html, /read-once p2wsh · 5 keys · 5 visual paths · offline/);
-  assert.match(html, /\[1\] KEYRING/);
-  assert.match(html, /\[2\] COMPOSE PATH/);
-  assert.match(html, /\[3\] VISUAL PATHS/);
-  assert.match(html, />STDOUT</);
-  assert.match(html, /pre-commit/);
-  assert.match(html, /lock until date \(UTC\)/);
-  assert.match(html, /keys may repeat across paths; the normalizer must remove every repeated script check\./);
-  assert.match(html, /marks are visual only\. saved paths alone define who can spend\./);
-  assert.match(html, /no paths\. stdout is empty until the first path is saved\./);
-  assert.match(html, /\[ ADD PATH \]/);
-  assert.match(html, /register key/);
-  assert.match(html, /\[load demo\]/);
-  assert.match(html, /\[reset\]/);
-  assert.match(html, /descriptor · hex · checks/);
-  assert.match(html, /nothing leaves this page\./);
-  assert.match(html, /compressed public keys only\. private keys never belong in this page\./);
-  assert.match(html, /http:\/\/localhost\/og\.png/);
+  assert.match(html, /<strong>MIMIR<\/strong>/);
+  assert.match(html, /v6 · PREVIEW/);
+  assert.match(html, /Declare your keys\. Compose the/);
+  assert.match(html, /Watch the script compile\./);
+  assert.match(html, />KEYS<\/h2>/);
+  assert.match(html, />POLICY<\/h2>/);
+  assert.match(html, />SPENDING PATHS<\/h2>/);
+  assert.match(html, />BITCOIN SCRIPT<\/h2>/);
+  assert.match(html, /BLOCKS · click or drag into the selected path/);
+  assert.match(html, />AND<\/strong>/);
+  assert.match(html, />OR<\/strong>/);
+  assert.match(html, />MULTISIG<\/strong>/);
+  assert.match(html, />TIMELOCK<\/strong>/);
+  assert.match(html, /KEYS · reusable in every path/);
+  assert.match(html, /DROP KEY OR MULTISIG HERE/);
+  assert.match(html, /\+ ADD OR BRANCH/);
+  assert.match(html, /LIVE/);
+  assert.match(html, /TECHNICAL DETAILS · HEX · CHECKS/);
+  assert.match(html, /Nothing leaves this page\./);
+  assert.match(html, /http:\/\/localhost\/og-v2\.png/);
   assert.match(html, /noindex/);
   assert.match(html, /connect-src &#x27;none&#x27;/);
   assert.doesNotMatch(
     html,
-    /MIMIR \/\/ GUARDED|COMPILE POLICY|lucide/i,
+    /COMPILE POLICY|lucide/i,
   );
-  assert.doesNotMatch(html, /RULE BLOCKS|RULE CANVAS|YOUR RULES|PUBLIC KEY REGISTRY|datetime-local|fingerprint|xpub/i);
+  assert.doesNotMatch(html, /KEYRING|COMPOSE PATH|pre-commit|\[ ADD PATH \]|datetime-local|fingerprint|xpub/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
@@ -66,24 +67,19 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /read-once p2wsh · 5 keys · 5 visual paths · offline/);
-  assert.match(page, /\[1\] KEYRING/);
-  assert.match(page, /\[2\] COMPOSE PATH/);
-  assert.match(page, /\[3\] VISUAL PATHS/);
-  assert.match(page, /STDOUT/);
-  assert.match(page, /pre-commit/);
-  assert.match(page, /NORMALIZE ▸ OK/);
-  assert.match(page, /NORMALIZE ▸ FAIL/);
-  assert.match(page, /visual key uses become/);
-  assert.match(page, /no equivalent read-once Miniscript was found/);
-  assert.match(page, /marks are visual only\. saved paths alone define who can spend\./);
-  assert.match(page, /any one satisfied path spends\. there is no other door\./);
-  assert.match(page, /DEMO KEYS — DO NOT FUND\./);
+  assert.match(page, /Declare your keys\. Compose the/);
+  assert.match(page, /BLOCKS · click or drag into the selected path/);
+  assert.match(page, /KEYS · reusable in every path/);
+  assert.match(page, /DROP KEY OR MULTISIG HERE/);
+  assert.match(page, /ADD OR BRANCH/);
+  assert.match(page, /SPENDING PATHS/);
+  assert.match(page, /LIVE/);
+  assert.match(page, /BITCOIN SCRIPT/);
+  assert.match(page, /DEMO KEYS — DO NOT FUND/);
   assert.match(page, /DO-NOT-FUND/);
-  assert.match(page, /address copy and export stay blocked until every demo key is replaced\./);
+  assert.match(page, /address copy and export are blocked/);
   assert.match(page, /disabled=\{addressAndExportBlocked\}/);
-  assert.match(page, /\[ ADD PATH \]/);
-  assert.match(page, /\[ export policy\.json \]/);
+  assert.match(page, /EXPORT POLICY\.JSON/);
   assert.match(page, /read-once-normalizer/);
   assert.match(page, /compileReadOncePolicy/);
   assert.match(page, /mimir-read-once-policy-request/);
@@ -91,15 +87,17 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   assert.match(page, /new Blob\(\[live\.compiled\.canonical_manifest\]/);
   assert.match(page, /MAX_READ_ONCE_KEYS/);
   assert.match(page, /MAX_READ_ONCE_PATHS/);
-  assert.match(page, /Owner is reused visually in every path, then factored to one emitted key check/);
-  assert.match(page, /type="checkbox"/);
+  assert.match(page, /Owner repeats visually but is emitted once after normalization/);
+  assert.match(page, /DRAG_MIME/);
+  assert.match(page, /draggable=\{!disabled\}/);
+  assert.match(page, /onDragStart/);
+  assert.match(page, /onDragOver/);
+  assert.match(page, /onDrop/);
+  assert.match(page, /dataTransfer/);
   assert.match(page, /type="date"/);
   assert.match(page, /max="2038-01-19"/);
   assert.match(page, /value === "regtest" \|\| value === "signet"/);
-  assert.doesNotMatch(
-    page,
-    /draggable|onDragStart|onDragOver|onDrop|DRAFT_BLOCK_MIME|dataTransfer|lucide-react|window\.confirm/,
-  );
+  assert.doesNotMatch(page, /type="checkbox"|lucide-react|window\.confirm/);
   assert.doesNotMatch(
     page,
     /recovery-template|compileRecoveryTemplate|mimir-recovery-request|primary_threshold|recovery_dates/i,
@@ -107,7 +105,7 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   assert.doesNotMatch(page, /partially overlaps saved set|compileGuardedRulePolicy|mimir-guarded-rule-request/);
   assert.doesNotMatch(
     page,
-    /MAX_KEYS\s*=\s*20|MAX_PATHS\s*=\s*10|RULE BLOCKS|RULE CANVAS|YOUR RULES|datetime-local|COMPILE POLICY|PUBLIC KEY REGISTRY|fingerprint|xpub|crypto\.randomUUID/i,
+    /MAX_KEYS\s*=\s*20|MAX_PATHS\s*=\s*10|datetime-local|COMPILE POLICY|PUBLIC KEY REGISTRY|fingerprint|xpub|crypto\.randomUUID/i,
   );
   assert.match(layout, /connect-src 'none'/);
   assert.match(layout, /index: false, follow: false/);
