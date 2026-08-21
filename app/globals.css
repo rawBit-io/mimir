@@ -198,24 +198,13 @@ input::placeholder { color: var(--faint); opacity: 1; }
 .palette-block span, .key-block code { color: var(--dim); font-size: 10px; }
 .palette-block:hover:not(:disabled), .key-block:hover:not(:disabled) { color: var(--green); border-color: var(--green); }
 .palette-block:disabled, .key-block:disabled { opacity: .32; }
-.block-or strong { color: var(--blue); }
 .block-timelock strong { color: var(--amber); }
 .block-multisig strong, .key-block strong { color: var(--green); }
 .palette-divider { height: 1px; margin: 12px 0; background: var(--line); }
 .key-block { min-width: 130px; }
 
 .policy-tree { margin-top: 10px; }
-.root-node {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--line);
-}
-.root-node span, .tree-connector, .then-row span { color: var(--faint); font-size: 11px; letter-spacing: .14em; }
-.root-node strong { color: var(--blue); letter-spacing: .14em; }
-.root-node p { color: var(--dim); }
+.tree-connector, .then-row span { color: var(--faint); font-size: 11px; letter-spacing: .14em; }
 .branches { padding: 6px 12px 0; }
 .policy-branch { border-left: 2px solid transparent; border-bottom: 1px solid var(--line); padding: 5px 0 10px 12px; }
 .policy-branch.is-active { border-left-color: var(--blue); background: linear-gradient(90deg, rgba(58, 100, 168, .09), transparent 45%); }
@@ -274,7 +263,7 @@ input::placeholder { color: var(--faint); opacity: 1; }
 .key-chip button { min-width: 28px; align-self: stretch; border: 0; color: var(--dim); background: transparent; }
 .key-chip button:hover { color: var(--red); }
 .drop-hint { color: var(--faint); font-size: 12px; }
-.empty-branch, .empty-condition {
+.empty-branch {
   width: 100%;
   min-height: 70px;
   display: grid;
@@ -286,12 +275,9 @@ input::placeholder { color: var(--faint); opacity: 1; }
   background: transparent;
 }
 .empty-branch span { color: var(--green); font-size: 17px; }
-.empty-branch strong, .empty-condition { font-size: 11px; letter-spacing: .12em; }
+.empty-branch strong { font-size: 11px; letter-spacing: .12em; }
 .empty-branch small { color: var(--faint); }
-.empty-branch:hover, .empty-condition:hover { color: var(--green); border-color: var(--green); }
-.empty-condition { min-height: 42px; display: flex; flex-direction: row; gap: 14px; }
-.empty-condition span { color: var(--blue); }
-.branch-logic { margin: 6px 0 0 54px; color: var(--faint); font-size: 10px; }
+.empty-branch:hover { color: var(--green); border-color: var(--green); }
 .add-branch {
   width: calc(100% - 36px);
   min-height: 38px;
@@ -463,7 +449,6 @@ input::placeholder { color: var(--faint); opacity: 1; }
   .date-control, .threshold-control, .selected-keys { grid-column: 2; width: 100%; }
   .tree-row > .node-remove { grid-column: 3; grid-row: 1; }
   .then-row { padding-left: 52px; }
-  .branch-logic { margin-left: 52px; }
   .spending-paths li { grid-template-columns: 58px 1fr; }
   .spending-paths li b { grid-column: 2; white-space: normal; }
   .mobile-script-link {
@@ -497,7 +482,7 @@ input::placeholder { color: var(--faint); opacity: 1; }
   .branches { padding-inline: 10px; }
   .policy-branch { padding-left: 10px; }
   .tree-row { grid-template-columns: 42px minmax(0, 1fr) 34px; gap: 8px; }
-  .then-row, .branch-logic { padding-left: 42px; margin-left: 0; }
+  .then-row { padding-left: 42px; margin-left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

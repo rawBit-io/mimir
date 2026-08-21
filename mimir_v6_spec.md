@@ -60,10 +60,11 @@ form exists, compilation fails and no address is produced.
 The single terminal-style page has four working areas:
 
 1. `01 KEYS` accepts labels and compressed public keys.
-2. `02 POLICY` provides AND, OR, MULTISIG, TIMELOCK, and reusable key blocks.
-   The user selects an OR-branch slot, then clicks a block or drags it into that
-   branch. An individual key creates a signing block; adding another key turns
-   it into multisig. `K` and date controls live inside the resulting block.
+2. `02 POLICY` provides MULTISIG, TIMELOCK, and reusable key blocks. The user
+   selects a spending path, then clicks a block or drags it into that path. An
+   individual key creates a signing block; adding another key turns it into
+   multisig. `K` and date controls live inside the resulting block. Users do
+   not manipulate Boolean AND or OR controls.
 3. `03 SPENDING PATHS` enumerates the alternatives derived from the visual
    tree. The root is always OR. Within one branch, its timelock and signing
    condition are joined by AND.
@@ -75,8 +76,10 @@ The single terminal-style page has four working areas:
 Click, touch, and keyboard interaction provide the complete workflow; native
 drag-and-drop is an additional desktop interaction. A key stays reusable in
 every branch. MULTISIG and TIMELOCK can each occur at most once per branch.
-OR adds another branch, up to five. An incomplete or unsupported tree remains
-editable but emits no address. There is no separate compile or save button.
+`ADD SPENDING PATH` adds another alternative, up to five. Internally, paths are
+joined by OR and a timelock is joined to its path's signing condition by AND.
+An incomplete or unsupported tree remains editable but emits no address. There
+is no separate compile or save button.
 
 The address dropdown exposes Mainnet, Testnet, Signet, and Regtest. The demo
 deliberately reuses Owner across four visual paths and

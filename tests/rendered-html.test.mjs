@@ -38,14 +38,13 @@ test("server-renders the terminal session interface", async () => {
   assert.match(html, />POLICY<\/h2>/);
   assert.match(html, />SPENDING PATHS<\/h2>/);
   assert.match(html, />BITCOIN SCRIPT<\/h2>/);
-  assert.match(html, /BLOCKS · click or drag into the selected path/);
-  assert.match(html, />AND<\/strong>/);
-  assert.match(html, />OR<\/strong>/);
+  assert.match(html, /PATH RULES · click or drag into the selected path/);
+  assert.doesNotMatch(html, />AND<\/strong>|>OR<\/strong>/);
   assert.match(html, />MULTISIG<\/strong>/);
   assert.match(html, />TIMELOCK<\/strong>/);
   assert.match(html, /KEYS · reusable in every path/);
-  assert.match(html, /DROP KEY OR MULTISIG HERE/);
-  assert.match(html, /\+ ADD OR BRANCH/);
+  assert.match(html, /DROP KEY \/ MULTISIG HERE/);
+  assert.match(html, /\+ ADD SPENDING PATH/);
   assert.match(html, /LIVE/);
   assert.match(html, /TECHNICAL DETAILS · HEX · CHECKS/);
   assert.match(html, /P2WSH ADDRESS · ARTIFACT/);
@@ -73,10 +72,11 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   ]);
 
   assert.match(page, /Declare your keys\. Compose the/);
-  assert.match(page, /BLOCKS · click or drag into the selected path/);
+  assert.match(page, /PATH RULES · click or drag into the selected path/);
   assert.match(page, /KEYS · reusable in every path/);
-  assert.match(page, /DROP KEY OR MULTISIG HERE/);
-  assert.match(page, /ADD OR BRANCH/);
+  assert.match(page, /DROP KEY \/ MULTISIG HERE/);
+  assert.match(page, /ADD SPENDING PATH/);
+  assert.doesNotMatch(page, /andSlot|addOrBranch|\["and", "AND"\]|\["or", "OR"\]/);
   assert.match(page, /SPENDING PATHS/);
   assert.match(page, /P2WSH ADDRESS · ARTIFACT/);
   assert.match(page, /Bitcoin Core funding command belongs to the next workflow step/);

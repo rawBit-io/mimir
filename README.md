@@ -55,9 +55,11 @@ The current implementation provides:
 
 - up to five valid compressed secp256k1 public keys;
 - up to five alternative visual paths;
-- a terminal policy canvas with a block palette and an implicit OR root;
-- click, keyboard, touch, and native drag/drop placement for keys, multisig,
-  timelock, AND, and OR controls;
+- a terminal policy canvas that builds one alternative spending path at a time;
+- click, keyboard, touch, and native drag/drop placement for keys, multisig, and
+  timelock controls;
+- implicit policy logic: each added path is an alternative, while a timelock is
+  automatically required by the path containing it;
 - inline `K-of-N` and UTC-date configuration inside each branch;
 - free reuse of a registered key across visual paths;
 - fail-closed read-once normalization on every complete tree change;

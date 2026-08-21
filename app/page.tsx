@@ -21,7 +21,6 @@ type PolicyBranch = {
   signingMode: SigningMode;
   keyRowIds: string[];
   threshold: number;
-  andSlot: boolean;
   unlockDate: string | null;
 };
 type FieldState = {
@@ -30,7 +29,7 @@ type FieldState = {
   normalizedPublicKey: string | null;
 };
 type LiveResult = { compiled: CompiledReadOncePolicy | null; message: string | null };
-type PaletteBlock = "and" | "or" | "multisig" | "timelock";
+type PaletteBlock = "multisig" | "timelock";
 
 const DRAG_MIME = "application/x-mimir-policy-block";
 const DEMO_PUBLIC_KEYS = [
@@ -73,7 +72,6 @@ function makeBranch(id: string): PolicyBranch {
     signingMode: null,
     keyRowIds: [],
     threshold: 1,
-    andSlot: false,
     unlockDate: null,
   };
 }
@@ -99,9 +97,9 @@ function demoBranches(): PolicyBranch[] {
   const all = ["key-row-1", "key-row-2", "key-row-3", "key-row-4"];
   return [
     { ...makeBranch("branch-1"), signingMode: "key", keyRowIds: ["key-row-1"] },
-    { ...makeBranch("branch-2"), signingMode: "multisig", keyRowIds: all, threshold: 3, andSlot: true, unlockDate: dates[0] },
-    { ...makeBranch("branch-3"), signingMode: "multisig", keyRowIds: all, threshold: 2, andSlot: true, unlockDate: dates[1] },
-    { ...makeBranch("branch-4"), signingMode: "multisig", keyRowIds: all, threshold: 1, andSlot: true, unlockDate: dates[2] },
+    { ...makeBranch("branch-2"), signingMode: "multisig", keyRowIds: all, threshold: 3, unlockDate: dates[0] },
+    { ...makeBranch("branch-3"), signingMode: "multisig", keyRowIds: all, threshold: 2, unlockDate: dates[1] },
+    { ...makeBranch("branch-4"), signingMode: "multisig", keyRowIds: all, threshold: 1, unlockDate: dates[2] },
   ];
 }
 
@@ -132,7 +130,7 @@ function readableDate(value: string | null): string {
 }
 
 function branchStarted(branch: PolicyBranch): boolean {
-  return branch.signingMode !== null || branch.andSlot || branch.unlockDate !== null;
+  return branch.signingMode !== null || branch.unlockDate !== null;
 }
 
 function validateRows(rows: KeyRow[]): Map<string, FieldState> {
@@ -178,9 +176,6 @@ function compileTree(
       }
       if (branch.threshold < 1 || branch.threshold > branch.keyRowIds.length) {
         throw new Error(`path P${String(index + 1).padStart(2, "0")} has an invalid signature threshold`);
-      }
-      if (branch.andSlot && !branch.unlockDate) {
-        throw new Error(`path P${String(index + 1).padStart(2, "0")} has an empty AND condition`);
       }
       if (branch.unlockDate) unixFromReadOnceDate(branch.unlockDate);
     });
@@ -332,11 +327,11 @@ export default function Home() {
     setFeedback("key removed from the registry");
   }
 
-  function addOrBranch() {
+  function addSpendingPath() {
     const untouched = branches.find((branch) => !branchStarted(branch));
     if (untouched) {
       setActiveBranchId(untouched.id);
-      setFeedback("empty OR branch selected");
+      setFeedback("empty spending path selected");
       return;
     }
     if (branches.length >= MAX_READ_ONCE_PATHS) {
@@ -347,7 +342,7 @@ export default function Home() {
     nextBranchId.current += 1;
     setBranches((current) => [...current, makeBranch(id)]);
     setActiveBranchId(id);
-    setFeedback("OR branch added — drop a key or multisig block into it");
+    setFeedback("spending path added — choose a key or multisig block");
   }
 
   function removeBranch(id: string) {
@@ -402,19 +397,10 @@ export default function Home() {
   }
 
   function applyBlock(block: PaletteBlock, branchId = activeBranch.id) {
-    if (block === "or") {
-      addOrBranch();
-      return;
-    }
-    if (block === "and") {
-      updateBranch(branchId, (branch) => branch.andSlot ? branch : { ...branch, andSlot: true });
-      setFeedback("AND condition added — drop TIMELOCK into the empty condition slot");
-      return;
-    }
     if (block === "timelock") {
       updateBranch(branchId, (branch) => branch.unlockDate
         ? branch
-        : { ...branch, andSlot: true, unlockDate: defaultUnlockDate() });
+        : { ...branch, unlockDate: defaultUnlockDate() });
       setFeedback("timelock added at 00:00 UTC — adjust the date in the branch");
       return;
     }
@@ -434,7 +420,7 @@ export default function Home() {
     setActiveBranchId(branchId);
     const payload = event.dataTransfer.getData(DRAG_MIME);
     if (payload.startsWith("key:")) addKeyToBranch(payload.slice(4), branchId);
-    else if (["and", "or", "multisig", "timelock"].includes(payload)) {
+    else if (["multisig", "timelock"].includes(payload)) {
       applyBlock(payload as PaletteBlock, branchId);
     }
   }
@@ -448,7 +434,7 @@ export default function Home() {
   }
 
   function removeTimelock(branchId: string) {
-    updateBranch(branchId, (branch) => ({ ...branch, andSlot: false, unlockDate: null }));
+    updateBranch(branchId, (branch) => ({ ...branch, unlockDate: null }));
   }
 
   function arm(kind: "demo" | "reset") {
@@ -525,8 +511,7 @@ export default function Home() {
     : activeBranches.length ? "red" : "dim";
   const multisigDisabled = Boolean(activeBranch.signingMode);
   const timelockDisabled = Boolean(activeBranch.unlockDate);
-  const andDisabled = activeBranch.andSlot;
-  const orDisabled = branches.length >= MAX_READ_ONCE_PATHS && branches.every(branchStarted);
+  const pathLimitReached = branches.length >= MAX_READ_ONCE_PATHS && branches.every(branchStarted);
 
   return (
     <main className="terminal-shell">
@@ -582,14 +567,12 @@ export default function Home() {
         <div className="composer-grid">
           <div className="policy-column">
             <section className="terminal-section policy-section" aria-labelledby="policy-heading">
-              <header className="section-heading"><span>02</span><h2 id="policy-heading">POLICY</h2><p>select a slot, then click a block — or drag one in</p><i></i><b>{activeBranches.length}/{MAX_READ_ONCE_PATHS}</b></header>
+              <header className="section-heading"><span>02</span><h2 id="policy-heading">POLICY</h2><p>build one spending path at a time</p><i></i><b>{activeBranches.length}/{MAX_READ_ONCE_PATHS}</b></header>
 
               <div className="palette" aria-label="policy blocks">
-                <p className="palette-label">BLOCKS · click or drag into the selected path</p>
+                <p className="palette-label">PATH RULES · click or drag into the selected path</p>
                 <div className="block-palette">
                   {([
-                    ["and", "AND", "both required", andDisabled],
-                    ["or", "OR", "either one", orDisabled],
                     ["multisig", "MULTISIG", "k-of-n keys", multisigDisabled],
                     ["timelock", "TIMELOCK", "not before date", timelockDisabled],
                   ] as const).map(([kind, title, subtitle, disabled]) => <button key={kind} type="button"
@@ -613,7 +596,6 @@ export default function Home() {
               </div>
 
               <div className="policy-tree">
-                <div className="root-node"><span>ROOT</span><strong>OR</strong><p>either branch alone can spend</p></div>
                 <div className="branches">{branches.map((branch, index) => {
                   const isActive = branch.id === activeBranch.id;
                   const branchLetter = String.fromCharCode(65 + index);
@@ -633,8 +615,7 @@ export default function Home() {
                         value={branch.unlockDate} min={futureMinimum} max="2038-01-19"
                         onChange={(event) => updateBranch(branch.id, (current) => ({ ...current, unlockDate: event.target.value }))} /></label>
                       <button type="button" className="node-remove" onClick={() => removeTimelock(branch.id)} aria-label={`remove timelock from path ${index + 1}`}>×</button>
-                    </div> : branch.andSlot ? <button type="button" className="empty-condition"
-                      onClick={() => applyBlock("timelock", branch.id)}><span>AND</span>DROP TIMELOCK HERE</button> : null}
+                    </div> : null}
 
                     {branch.unlockDate && branch.signingMode ? <div className="then-row"><span>THEN</span></div> : null}
 
@@ -655,15 +636,14 @@ export default function Home() {
                         : <span className="drop-hint">drop keys here</span>}</div>
                       <button type="button" className="node-remove" onClick={() => removeSigning(branch.id)} aria-label={`remove signing block from path ${index + 1}`}>×</button>
                     </div> : <button type="button" className="empty-branch" onClick={() => setActiveBranchId(branch.id)}>
-                      <span>+</span><strong>DROP KEY OR MULTISIG HERE</strong><small>this becomes one spending path</small>
+                      <span>+</span><strong>DROP KEY / MULTISIG HERE</strong><small>this becomes one spending path</small>
                     </button>}
 
-                    {branch.unlockDate && branch.signingMode ? <p className="branch-logic">AND · both the timelock and signature condition are required</p> : null}
                   </article>;
                 })}</div>
-                <button className="add-branch" type="button" onClick={addOrBranch} disabled={orDisabled}>+ ADD OR BRANCH</button>
+                <button className="add-branch" type="button" onClick={addSpendingPath} disabled={pathLimitReached}>+ ADD SPENDING PATH</button>
               </div>
-              <p className="canvas-help">AND · both conditions must pass <span>OR · either branch can spend</span> <span>TIMELOCK · branch dormant until its date</span></p>
+              <p className="canvas-help">Each path is an alternative way to spend. A timelock applies automatically to its path.</p>
             </section>
 
             <section className="terminal-section paths-section" aria-labelledby="paths-heading">
