@@ -26,7 +26,6 @@ type PolicyBranch = {
 type FieldState = {
   labelError: string | null;
   publicKeyError: string | null;
-  normalizedPublicKey: string | null;
 };
 type LiveResult = { compiled: CompiledDirectScriptPolicy | null; message: string | null };
 
@@ -145,7 +144,7 @@ function validateRows(rows: KeyRow[]): Map<string, FieldState> {
     const publicKeyError = !publicKey
       ? row.publicKey.trim() ? "not a compressed secp256k1 point" : "awaiting public key"
       : (publicKeyCounts.get(publicKey) ?? 0) > 1 ? "public key already registered" : null;
-    return [row.id, { labelError, publicKeyError, normalizedPublicKey: publicKey }];
+    return [row.id, { labelError, publicKeyError }];
   }));
 }
 
@@ -324,7 +323,6 @@ export default function Home() {
   const hasNonFutureDelay = useMemo(() => branches.some((branch) =>
     branch.unlockDate !== null && branch.unlockDate < futureMinimum), [branches, futureMinimum]);
   const addressAndExportBlocked = hasDemoKey || hasNonFutureDelay;
-  const opcodeCount = live.compiled?.opcode_count ?? 0;
 
   function updateRow(id: string, patch: Partial<Omit<KeyRow, "id">>) {
     setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
@@ -472,13 +470,6 @@ export default function Home() {
     return `From ${readableDate(branch.unlockDate)} onward, ${who} may spend.`;
   }
 
-  const statusLabel = live.compiled
-    ? addressAndExportBlocked ? "REVIEW" : "COMPILES"
-    : live.message ? "UNRESOLVED" : "INCOMPLETE";
-  const statusTone = live.compiled
-    ? addressAndExportBlocked ? "warning" : "valid"
-    : live.message ? "error" : "draft";
-  const revision = live.compiled ? live.compiled.policy_manifest_sha256.slice(0, 12) : "not issued";
   const canAddClause = branches.length < MAX_DIRECT_SCRIPT_CLAUSES && branches.every(branchComplete);
 
   return (
@@ -487,17 +478,11 @@ export default function Home() {
         <header className="sheet-header">
           <div className="sheet-titlebar">
             <strong>MIMIR</strong>
-            <span>BITCOIN SPENDING POLICY · SPECIFICATION SHEET</span>
-            <b>SHEET 1 OF 1</b>
-          </div>
-          <div className="sheet-meta">
-            <div><span>REVISION</span><strong>{revision}</strong></div>
-            <div><span>TEMPLATE</span><strong>direct P2WSH v1</strong></div>
-            <div><span>STATUS</span><strong className={`status-stamp is-${statusTone}`}><i></i>{statusLabel}</strong></div>
-            <div className="sheet-actions"><span>SESSION</span><p>
+            <span>BITCOIN SPENDING POLICY</span>
+            <p className="header-actions">
               <button type="button" onClick={requestDemo} onBlur={() => setArmed(null)}>{armed === "demo" ? "REALLY LOAD?" : "DEMO"}</button>
               <button type="button" onClick={() => arm("reset")} onBlur={() => setArmed(null)}>{armed === "reset" ? "REALLY RESET?" : "RESET"}</button>
-            </p></div>
+            </p>
           </div>
         </header>
 
@@ -506,24 +491,27 @@ export default function Home() {
 
         <section className="sheet-section keyholder-section" aria-labelledby="keyholders-heading">
           <header className="section-title"><span>§1</span><h2 id="keyholders-heading">KEYHOLDERS</h2><p>compressed public keys, entered by hand</p><i></i><b>{rows.length} of {MAX_DIRECT_SCRIPT_KEYS}</b></header>
-          <div className="key-table-head" aria-hidden="true"><span>NO</span><span>LABEL</span><span>PUBLIC KEY · secp256k1</span><span>STATE</span><span></span></div>
+          <div className="key-table-head" aria-hidden="true"><span>NO</span><span>LABEL</span><span>PUBLIC KEY · secp256k1</span><span></span></div>
           <div className="key-table">{rows.map((row, index) => {
             const state = fieldState.get(row.id);
-            const usedCount = branches.filter((branch) => branch.keyRowIds.includes(row.id)).length;
-            const verified = Boolean(state?.normalizedPublicKey && !state.publicKeyError && !state.labelError);
-            const hasInputError = Boolean(row.publicKey.trim() && state?.publicKeyError);
+            const visibleLabelError = row.label.trim() || row.publicKey.trim() ? state?.labelError : null;
+            const visiblePublicKeyError = row.publicKey.trim() ? state?.publicKeyError : null;
+            const visibleErrors = [
+              visibleLabelError ? `label: ${visibleLabelError}` : null,
+              visiblePublicKeyError ? `public key: ${visiblePublicKeyError}` : null,
+            ].filter((message): message is string => Boolean(message));
+            const errorId = `keyholder-${index + 1}-error`;
             return <div className="keyholder-row" key={row.id}>
               <span className="row-index">{String(index + 1).padStart(2, "0")}</span>
               <label><span className="sr-only">keyholder {index + 1} label</span><input value={row.label}
                 onChange={(event) => updateRow(row.id, { label: event.target.value })} placeholder="label"
-                maxLength={80} autoComplete="off" aria-invalid={Boolean(state?.labelError)} /></label>
+                maxLength={80} autoComplete="off" aria-invalid={Boolean(visibleLabelError)}
+                aria-describedby={visibleErrors.length ? errorId : undefined} /></label>
               <label><span className="sr-only">keyholder {index + 1} compressed public key</span><input value={row.publicKey}
                 onChange={(event) => updateRow(row.id, { publicKey: event.target.value.replace(/\s+/g, "") })}
                 placeholder="02… or 03… + 64 hex" autoComplete="off" autoCapitalize="none" spellCheck={false}
-                aria-invalid={Boolean(state?.publicKeyError)} /></label>
-              <p className={verified ? "is-valid" : hasInputError ? "is-error" : ""}>
-                {verified ? `verified · ${usedCount ? `${usedCount} ${usedCount === 1 ? "clause" : "clauses"}` : "unused"}` : state?.publicKeyError ?? "awaiting entry"}
-              </p>
+                aria-invalid={Boolean(visiblePublicKeyError)} aria-describedby={visibleErrors.length ? errorId : undefined} /></label>
+              {visibleErrors.length ? <p id={errorId} className="is-error">{visibleErrors.join(" · ")}</p> : null}
               <button type="button" className="remove-button" onClick={() => removeKeyRow(row.id)}
                 aria-label={`remove ${row.label.trim() || `keyholder ${index + 1}`}`} aria-disabled={usedByBranch.has(row.id)}>×</button>
             </div>;
@@ -569,24 +557,22 @@ export default function Home() {
         </section>
 
         <section className="sheet-section artifacts-section" aria-labelledby="artifacts-heading">
-          <header className="section-title"><span>§3</span><h2 id="artifacts-heading">COMPILED ARTIFACTS</h2><p>{live.compiled ? "deterministic for the clauses above" : "issued when every visible clause is complete"}</p><i></i></header>
+          <header className="section-title"><span>§3</span><h2 id="artifacts-heading">COMPILED ARTIFACTS</h2><i></i></header>
 
           {live.message ? <div className="error-sheet" role="alert"><strong>1 UNRESOLVED ITEM · NO ARTIFACTS ISSUED</strong><p>— {live.message}</p></div> : null}
-          {!live.compiled && !live.message ? <div className="awaiting-sheet"><strong>AWAITING A COMPLETE CLAUSE</strong><span>Select verified keyholders in §2 to compile the policy.</span></div> : null}
+          {!live.compiled && !live.message ? <div className="awaiting-sheet"><strong>AWAITING A COMPLETE CLAUSE</strong><span>Select complete keyholders in §2 to compile the policy.</span></div> : null}
 
           {live.compiled ? <div className="artifact-stack">
-            <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3><span>{live.compiled.witness_script_bytes} / 3600 bytes · {opcodeCount} opcodes</span><CopyButton value={formattedAsm} label="Bitcoin Script ASM" /></header><pre className="asm-code" aria-label="Formatted Bitcoin Script"><code>{formattedAsm}</code></pre></section>
-            <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS · OUTPUT ARTIFACT</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
+            <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3><CopyButton value={formattedAsm} label="Bitcoin Script ASM" /></header><pre className="asm-code" aria-label="Formatted Bitcoin Script"><code>{formattedAsm}</code></pre></section>
+            <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
               const value = event.currentTarget.value;
               if (isUiNetwork(value)) setNetwork(value);
-            }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><CopyButton value={live.compiled.address} label="P2WSH address" disabled={addressAndExportBlocked} /></header><p>{live.compiled.address}</p><small>The Bitcoin Core funding command belongs to the next workflow step.</small></section>
-            <div className="export-row"><button type="button" onClick={downloadPolicy} disabled={addressAndExportBlocked}>↓ DOWNLOAD POLICY JSON</button><span>{addressAndExportBlocked ? `blocked · ${hasDemoKey ? "demo keys" : "review date"}` : `manifest sha256 ${live.compiled.policy_manifest_sha256.slice(0, 20)}…`}</span></div>
+            }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><CopyButton value={live.compiled.address} label="P2WSH address" disabled={addressAndExportBlocked} /></header><p>{live.compiled.address}</p></section>
+            <div className="export-row"><button type="button" onClick={downloadPolicy} disabled={addressAndExportBlocked}>↓ DOWNLOAD POLICY JSON</button></div>
           </div> : null}
         </section>
 
         <footer className="sheet-footer">
-          <div><span>REVIEWED BY</span><i></i></div>
-          <div><span>REHEARSED ON</span><i></i></div>
           <p>Generated locally from public keys only. Nothing is signed, stored, or transmitted. Reproduce the witness script and address independently, then rehearse every branch on {network} before funding.</p>
         </footer>
       </article>

@@ -31,8 +31,8 @@ test("server-renders the compact specification-sheet interface", async () => {
   const html = await response.text();
   assert.match(html, /<title>Mimir — Bitcoin Script Builder<\/title>/);
   assert.match(html, /<strong>MIMIR<\/strong>/);
-  assert.match(html, /BITCOIN SPENDING POLICY · SPECIFICATION SHEET/);
-  assert.match(html, /SHEET 1 OF 1/);
+  assert.match(html, /BITCOIN SPENDING POLICY/);
+  assert.doesNotMatch(html, /SPECIFICATION SHEET|SHEET 1 OF 1/);
   assert.match(html, />KEYHOLDERS<\/h2>/);
   assert.match(html, />SPENDING CLAUSES<\/h2>/);
   assert.match(html, />COMPILED ARTIFACTS<\/h2>/);
@@ -66,7 +66,7 @@ test("source keeps the restricted Direct Script compiler, public-only input, and
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /BITCOIN SPENDING POLICY · SPECIFICATION SHEET/);
+  assert.match(page, /BITCOIN SPENDING POLICY/);
   assert.match(page, /KEYHOLDERS IN THIS CLAUSE/);
   assert.match(page, /ADD KEYHOLDER/);
   assert.match(page, /ADD CLAUSE/);
@@ -74,8 +74,8 @@ test("source keeps the restricted Direct Script compiler, public-only input, and
   assert.match(page, /FROM DATE/);
   assert.doesNotMatch(page, /andSlot|addOrBranch|\["and", "AND"\]|\["or", "OR"\]/);
   assert.match(page, /SPENDING CLAUSES/);
-  assert.match(page, /P2WSH ADDRESS · OUTPUT ARTIFACT/);
-  assert.match(page, /Bitcoin Core funding command belongs to the next workflow step/);
+  assert.match(page, /P2WSH ADDRESS/);
+  assert.doesNotMatch(page, /OUTPUT ARTIFACT|Bitcoin Core funding command belongs to the next workflow step/);
   assert.match(page, /BITCOIN SCRIPT · ASM/);
   assert.match(page, /Formatted Bitcoin Script/);
   assert.match(page, /formatBitcoinScript/);
@@ -84,6 +84,7 @@ test("source keeps the restricted Direct Script compiler, public-only input, and
   assert.match(page, /Address copy and JSON export are blocked/);
   assert.match(page, /disabled=\{addressAndExportBlocked\}/);
   assert.match(page, /DOWNLOAD POLICY JSON/);
+  assert.doesNotMatch(page, />STATE<|>REVISION<|>TEMPLATE<|>STATUS<|REVIEWED BY|REHEARSED ON|manifest sha256/);
   assert.doesNotMatch(page, /verification-summary|verification-grid|VERIFICATION DETAILS|OPERATING NOTICES/);
   assert.match(page, /direct-script-policy/);
   assert.match(page, /compileDirectScriptPolicy/);
