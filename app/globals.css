@@ -179,6 +179,11 @@ input[aria-invalid="true"]:not(:placeholder-shown) { border-color: var(--red); }
 .footnote { margin-top: 12px; color: var(--dim); font-size: 12px; }
 
 /* ── [2] compose ────────────────────────────────────────────── */
+.compose-intro {
+  margin: 2px 4px 12px;
+  color: var(--dim);
+  font-size: 12px;
+}
 .checklist { display: grid; }
 .checkrow {
   display: flex;
@@ -323,6 +328,16 @@ input[aria-invalid="true"]:not(:placeholder-shown) { border-color: var(--red); }
 .readout li + li { margin-top: 4px; }
 .readout .path-id { color: var(--green); }
 .policy-close { margin-top: 12px; color: var(--dim); font-size: 12px; }
+.normalization-readout { margin-top: 8px; }
+.normalization-readout > p { color: var(--green); }
+.normalization-readout ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--dim);
+  font-size: 12px;
+}
+.normalization-readout li + li { margin-top: 4px; }
 .waiting { margin-top: 8px; color: var(--dim); }
 .err-line { margin-top: 8px; color: var(--red); font-size: 12px; overflow-wrap: anywhere; }
 .out-code {

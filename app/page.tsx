@@ -2,18 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  MAX_GUARDED_KEYS,
-  MAX_GUARDED_RULES,
-  TEMPLATE_ID_GUARDED,
-  compileGuardedRulePolicy,
-  unixFromGuardedRuleDate,
-  validateGuardedRulePublicKey,
-  type CompiledGuardedRulePolicy,
-  type GuardedNetwork,
-  type GuardedRuleComposerRequest,
-} from "../lib/guarded-rule-composer";
+  MAX_READ_ONCE_KEYS,
+  MAX_READ_ONCE_PATHS,
+  TEMPLATE_ID_READ_ONCE,
+  compileReadOncePolicy,
+  unixFromReadOnceDate,
+  validateReadOncePublicKey,
+  type CompiledReadOncePolicy,
+  type ReadOnceNetwork,
+  type ReadOncePolicyRequest,
+} from "../lib/read-once-normalizer";
 
-type UiNetwork = Exclude<GuardedNetwork, "bitcoin">;
+type UiNetwork = Exclude<ReadOnceNetwork, "bitcoin">;
 type SignerMark = "owner" | "recovery";
 type SignerRow = { id: string; label: string; publicKey: string; mark: SignerMark };
 type LocalPath = { id: string; keyRowIds: string[]; threshold: number; unlockDate: string | null };
@@ -23,10 +23,10 @@ type FieldState = {
   labelError: string | null;
   publicKeyError: string | null;
 };
-type LiveResult = { compiled: CompiledGuardedRulePolicy | null; message: string | null };
+type LiveResult = { compiled: CompiledReadOncePolicy | null; message: string | null };
 type CheckState = "ok" | "fail" | "pending";
 type CheckRow = { name: string; state: CheckState; value: string };
-type DisplayPath = { path: LocalPath; glyph: string | null; ladder: { stage: number; size: number } | null; sameSet: boolean };
+type DisplayPath = { path: LocalPath; glyph: string | null; ladder: { stage: number; size: number } | null };
 
 const DEMO_PUBLIC_KEYS = [
   "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
@@ -120,7 +120,6 @@ function orderedPaths(paths: LocalPath[]): DisplayPath[] {
     path,
     glyph: group.length === 1 ? null : stage === 0 ? "┌" : stage === group.length - 1 ? "└" : "├",
     ladder: group.length === 1 ? null : { stage: stage + 1, size: group.length },
-    sameSet: group.length > 1 && stage > 0,
   })));
 }
 
@@ -132,7 +131,7 @@ function validateRows(rows: SignerRow[]): Map<string, FieldState> {
     labelCounts.set(comparable, (labelCounts.get(comparable) ?? 0) + 1);
   }
   const publicKeys = rows.map((row) => {
-    try { return validateGuardedRulePublicKey(row.publicKey); } catch { return null; }
+    try { return validateReadOncePublicKey(row.publicKey); } catch { return null; }
   });
   const publicKeyCounts = new Map<string, number>();
   for (const publicKey of publicKeys) {
@@ -164,7 +163,7 @@ function compilePaths(rows: SignerRow[], paths: LocalPath[], network: UiNetwork)
       if (!row) throw new Error("a saved path references a removed key.");
       const label = row.label.trim().normalize("NFC");
       if (!label) throw new Error("name every key used by a saved path.");
-      return { row, label, publicKey: validateGuardedRulePublicKey(row.publicKey) };
+      return { row, label, publicKey: validateReadOncePublicKey(row.publicKey) };
     });
     if (new Set(usedRows.map((entry) => entry.label.toLocaleLowerCase("en-US"))).size !== usedRows.length) {
       throw new Error("use a unique label for every key in the saved paths.");
@@ -176,7 +175,7 @@ function compilePaths(rows: SignerRow[], paths: LocalPath[], network: UiNetwork)
       const label = row.label.trim().normalize("NFC");
       if (!label || !row.publicKey.trim()) return [];
       try {
-        return [{ row, label, publicKey: validateGuardedRulePublicKey(row.publicKey) }];
+        return [{ row, label, publicKey: validateReadOncePublicKey(row.publicKey) }];
       } catch {
         return [];
       }
@@ -186,27 +185,27 @@ function compilePaths(rows: SignerRow[], paths: LocalPath[], network: UiNetwork)
     const requestIdByRowId = new Map(sortedKeys.map((entry, index) => [
       entry.row.id, `key-${String(index + 1).padStart(2, "0")}`,
     ]));
-    const request: GuardedRuleComposerRequest = {
-      format: "mimir-guarded-rule-request",
-      version: 5,
+    const request: ReadOncePolicyRequest = {
+      format: "mimir-read-once-policy-request",
+      version: 6,
       network,
-      template_id: TEMPLATE_ID_GUARDED,
+      template_id: TEMPLATE_ID_READ_ONCE,
       keys: sortedKeys.map((entry, index) => ({
         id: `key-${String(index + 1).padStart(2, "0")}`,
         label: entry.label,
         public_key: entry.publicKey,
       })),
-      rules: paths.map((path) => ({
+      paths: paths.map((path) => ({
         key_ids: path.keyRowIds.map((rowId) => {
           const requestId = requestIdByRowId.get(rowId);
           if (!requestId) throw new Error("a saved path contains an unknown key.");
           return requestId;
         }),
         threshold: path.threshold,
-        unlock_unix: path.unlockDate ? unixFromGuardedRuleDate(path.unlockDate) : null,
+        unlock_unix: path.unlockDate ? unixFromReadOnceDate(path.unlockDate) : null,
       })),
     };
-    return { compiled: compileGuardedRulePolicy(request), message: null };
+    return { compiled: compileReadOncePolicy(request), message: null };
   } catch (error) {
     return { compiled: null, message: error instanceof Error ? error.message : "the saved paths could not be compiled." };
   }
@@ -290,56 +289,45 @@ export default function Home() {
     return `p${index + 1}`;
   }
 
-  const guard = (() => {
-    if (selectedCount === 0) return { ok: null as boolean | null, line: null as string | null };
-    const draftSet = new Set(selectedKeyIds);
-    const draftSetKey = signerSetKey(selectedKeyIds);
-    const savedSets = new Map<string, LocalPath[]>();
-    for (const path of paths) {
-      const key = signerSetKey(path.keyRowIds);
-      savedSets.set(key, [...(savedSets.get(key) ?? []), path]);
-    }
-    for (const [savedSetKey, savedPaths] of savedSets) {
-      if (savedSetKey === draftSetKey) continue;
-      const savedIds = savedPaths[0].keyRowIds;
-      const overlap = savedIds.filter((id) => draftSet.has(id));
-      if (overlap.length > 0) {
-        return {
-          ok: false,
-          line: `GUARD ▸ FAIL — ${formatSet(overlap)} partially overlaps saved set ${formatSet(savedIds)}. reuse all ${savedIds.length} keys or choose a disjoint set.`,
-        };
-      }
-    }
-    const matching = savedSets.get(draftSetKey) ?? [];
-    if (matching.length === 0) return { ok: true, line: "GUARD ▸ OK — new signer set. compiles as an independent branch." };
-    const last = matching[matching.length - 1];
-    if (last.threshold <= 1) return { ok: false, line: "GUARD ▸ FAIL — this set already reached 1-of-n. its threshold cannot decrease again." };
-    if (effectiveThreshold >= last.threshold) return {
-      ok: false, line: `GUARD ▸ FAIL — reuse needs a lower k than the previous ${last.threshold}-of-${last.keyRowIds.length} path.`,
-    };
-    if (!lockEnabled) return {
-      ok: false,
-      line: last.unlockDate
-        ? `GUARD ▸ FAIL — reuse needs a date lock set after ${readableDate(last.unlockDate)}.`
-        : "GUARD ▸ FAIL — reuse needs a future date lock so this stage comes later.",
-    };
-    if (last.unlockDate && unlockDate <= last.unlockDate) return {
-      ok: false, line: `GUARD ▸ FAIL — reuse needs a date lock set after ${readableDate(last.unlockDate)}.`,
-    };
-    return { ok: true, line: `GUARD ▸ OK — exact-set ladder reuse: ${formatSet(selectedKeyIds)} returns later with ${effectiveThreshold}-of-${selectedCount}.` };
-  })();
-
-  const limitReached = paths.length >= MAX_GUARDED_RULES;
+  const limitReached = paths.length >= MAX_READ_ONCE_PATHS;
   const completeSelected = selectedKeyIds.filter((id) => {
     const state = fieldState.get(id);
     return state && !state.labelInvalid && !state.publicKeyInvalid;
   }).length;
   const timelock = (() => {
     if (!lockEnabled) return { ok: true, value: "not set (spend immediately)" };
-    try { unixFromGuardedRuleDate(unlockDate); }
+    try { unixFromReadOnceDate(unlockDate); }
     catch { return { ok: false, value: "invalid date" }; }
     if (unlockDate < futureMinimum) return { ok: false, value: `${unlockDate} (not future)` };
     return { ok: true, value: `${unlockDate} (future)` };
+  })();
+
+  const normalizer = (() => {
+    if (selectedCount === 0) return { ok: null as boolean | null, line: null as string | null };
+    if (limitReached) return { ok: false, line: "NORMALIZE ▸ FAIL — five saved paths is the limit." };
+    if (completeSelected < selectedCount || !timelock.ok || effectiveThreshold < 1 || effectiveThreshold > selectedCount) {
+      return { ok: null as boolean | null, line: "NORMALIZE ▸ WAIT — complete the draft path first." };
+    }
+    const candidate: LocalPath = {
+      id: "draft-path",
+      keyRowIds: [...selectedKeyIds],
+      threshold: effectiveThreshold,
+      unlockDate: lockEnabled ? unlockDate : null,
+    };
+    const trial = compilePaths(rows, [...paths, candidate], network);
+    if (!trial.compiled) {
+      return {
+        ok: false,
+        line: `NORMALIZE ▸ FAIL — ${lowerFirst(trial.message ?? "no equivalent read-once Miniscript was found.")}`,
+      };
+    }
+    const normalization = trial.compiled.manifest.normalization;
+    return {
+      ok: true,
+      line: normalization.changed
+        ? `NORMALIZE ▸ OK — ${normalization.authored_key_occurrences} visual key uses become ${normalization.emitted_key_checks} read-once checks.`
+        : "NORMALIZE ▸ OK — policy is already read-once.",
+    };
   })();
 
   const checkRows: CheckRow[] = [
@@ -354,19 +342,19 @@ export default function Home() {
       : { name: "threshold", state: "ok", value: selectedCount === 1 ? "1 of 1 (single key)" : `${threshold} of ${selectedCount}` },
     { name: "timelock", state: timelock.ok ? "ok" : "fail", value: timelock.value },
     limitReached
-      ? { name: "guard", state: "fail", value: "FAIL" }
-      : guard.ok === null
-        ? { name: "guard", state: "pending", value: "awaiting signers" }
-        : { name: "guard", state: guard.ok ? "ok" : "fail", value: guard.ok ? "OK" : "FAIL" },
+      ? { name: "normalizer", state: "fail", value: "FAIL" }
+      : normalizer.ok === null
+        ? { name: "normalizer", state: "pending", value: "awaiting complete path" }
+        : { name: "normalizer", state: normalizer.ok ? "ok" : "fail", value: normalizer.ok ? "READ-ONCE" : "FAIL" },
   ];
-  const guardLine = limitReached ? "GUARD ▸ FAIL — five saved paths is the limit." : guard.line;
+  const normalizerLine = limitReached ? "NORMALIZE ▸ FAIL — five saved paths is the limit." : normalizer.line;
 
   const draftBlocked = limitReached ? "five saved paths is the limit."
     : selectedCount === 0 ? "select at least one signer."
       : completeSelected < selectedCount ? "complete every selected key first."
         : effectiveThreshold < 1 || effectiveThreshold > selectedCount ? "choose a valid k-of-n threshold."
           : !timelock.ok ? "set a future utc date or disable the lock."
-            : guard.ok === false ? "resolve the guard failure." : null;
+            : normalizer.ok === false ? "this combination has no verified read-once form." : null;
 
   function updateRow(id: string, patch: Partial<Omit<SignerRow, "id">>) {
     setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
@@ -374,7 +362,7 @@ export default function Home() {
   }
 
   function addKey() {
-    if (rows.length >= MAX_GUARDED_KEYS) return;
+    if (rows.length >= MAX_READ_ONCE_KEYS) return;
     const id = `signer-${nextSignerId.current}`;
     nextSignerId.current += 1;
     setRows((current) => [...current, { id, label: "", publicKey: "", mark: "recovery" }]);
@@ -405,15 +393,9 @@ export default function Home() {
     }
     const state = fieldState.get(id);
     if (!state || state.labelInvalid || state.publicKeyInvalid) return;
-    const related = paths.find((path) => path.keyRowIds.includes(id));
-    const additions = related ? related.keyRowIds : [id];
-    const nextSelection = [...selectedKeyIds];
-    for (const addition of additions) if (!nextSelection.includes(addition)) nextSelection.push(addition);
+    const nextSelection = [...selectedKeyIds, id];
     setSelectedKeyIds(nextSelection);
     setThreshold((value) => normalizedThreshold(value, nextSelection.length));
-    if (related && additions.length > 1) {
-      setFeedback(`note: ${keyIdByRowId.get(id)} is bound to saved set ${formatSet(related.keyRowIds)} — full set selected for a ladder stage.`);
-    }
   }
 
   function clearDraft() {
@@ -433,13 +415,14 @@ export default function Home() {
     };
     const trial = compilePaths(rows, [...paths, candidate], network);
     if (!trial.compiled) {
-      setFeedback(`! err: ${lowerFirst(trial.message ?? "this path is outside the guarded miniscript shape.")}`);
+      setFeedback(`! err: ${lowerFirst(trial.message ?? "no equivalent read-once Miniscript was found.")}`);
       return;
     }
     nextPathId.current += 1;
     setPaths((current) => [...current, candidate]);
     clearDraft();
-    setFeedback(`${displayIdOf([...paths, candidate], candidate.id)} saved. keys remain reusable under the guard.`);
+    const normalization = trial.compiled.manifest.normalization;
+    setFeedback(`${displayIdOf([...paths, candidate], candidate.id)} saved. ${normalization.authored_key_occurrences} visual key uses normalize to ${normalization.emitted_key_checks} emitted checks.`);
     checklistRef.current?.querySelector<HTMLInputElement>("input:not(:disabled)")?.focus();
   }
 
@@ -466,15 +449,15 @@ export default function Home() {
     setRows(demoRows());
     setPaths([
       { id: "demo-path-1", keyRowIds: ["signer-0"], threshold: 1, unlockDate: null },
-      { id: "demo-path-2", keyRowIds: ["signer-1", "signer-2", "signer-3"], threshold: 3, unlockDate: dates[0] },
-      { id: "demo-path-3", keyRowIds: ["signer-1", "signer-2", "signer-3"], threshold: 2, unlockDate: dates[1] },
-      { id: "demo-path-4", keyRowIds: ["signer-1", "signer-2", "signer-3"], threshold: 1, unlockDate: dates[2] },
+      { id: "demo-path-2", keyRowIds: ["signer-0", "signer-1", "signer-2", "signer-3"], threshold: 3, unlockDate: dates[0] },
+      { id: "demo-path-3", keyRowIds: ["signer-0", "signer-1", "signer-2", "signer-3"], threshold: 2, unlockDate: dates[1] },
+      { id: "demo-path-4", keyRowIds: ["signer-0", "signer-1", "signer-2", "signer-3"], threshold: 1, unlockDate: dates[2] },
     ]);
     setNetwork("regtest");
     clearDraft();
     nextSignerId.current = 4;
     nextPathId.current = 5;
-    setFeedback("demo loaded: owner now, then 3-of-3, 2-of-3, and 1-of-3 recovery on later dates.");
+    setFeedback("demo loaded: Owner is reused visually in every path, then factored to one emitted key check.");
   }
 
   function requestDemo() {
@@ -525,7 +508,7 @@ export default function Home() {
       const label = rowById.get(id)?.label.trim() || "unnamed key";
       return `${keyIdByRowId.get(id) ?? "k?"} ${label} · ${timing}`;
     }
-    const set = entry.sameSet ? "same set" : formatSet(path.keyRowIds);
+    const set = formatSet(path.keyRowIds);
     return `${path.threshold}-of-${path.keyRowIds.length} ${set} · ${timing}`;
   }
 
@@ -551,8 +534,8 @@ export default function Home() {
   return (
     <main className="shell">
       <header className="statusbar">
-        <h1 className="wordmark">mimir v5 <span className="cursor" aria-hidden="true">▮</span></h1>
-        <p className="tagline">guarded p2wsh · 5 keys · 5 paths · offline</p>
+        <h1 className="wordmark">mimir v6 <span className="cursor" aria-hidden="true">▮</span></h1>
+        <p className="tagline">read-once p2wsh · 5 keys · 5 visual paths · offline</p>
         <div className="session-controls">
           <label className="net-field"><span>net</span>
             <select value={network} aria-label="bitcoin test network" onChange={(event) => {
@@ -580,7 +563,7 @@ export default function Home() {
       <div className="workspace">
         <div className="stdin">
           <section className="frame" aria-labelledby="keyring-heading">
-            <header className="frame-heading"><h2 id="keyring-heading">[1] KEYRING</h2><span className="counter">{rows.length}/{MAX_GUARDED_KEYS}</span></header>
+            <header className="frame-heading"><h2 id="keyring-heading">[1] KEYRING</h2><span className="counter">{rows.length}/{MAX_READ_ONCE_KEYS}</span></header>
             <div className="keyring">{rows.map((row, index) => {
               const state = fieldState.get(row.id);
               const inUseCount = paths.filter((path) => path.keyRowIds.includes(row.id)).length;
@@ -613,14 +596,15 @@ export default function Home() {
                   aria-label={`remove ${row.label.trim() || `key ${index + 1}`}`}>[rm]</button>
               </article>;
             })}</div>
-            <button className="wide-button" type="button" onClick={addKey} disabled={rows.length >= MAX_GUARDED_KEYS}>
-              {rows.length >= MAX_GUARDED_KEYS ? `[ keyring full ${rows.length}/${MAX_GUARDED_KEYS} ]` : `[ + register key ${rows.length + 1}/${MAX_GUARDED_KEYS} ]`}
+            <button className="wide-button" type="button" onClick={addKey} disabled={rows.length >= MAX_READ_ONCE_KEYS}>
+              {rows.length >= MAX_READ_ONCE_KEYS ? `[ keyring full ${rows.length}/${MAX_READ_ONCE_KEYS} ]` : `[ + register key ${rows.length + 1}/${MAX_READ_ONCE_KEYS} ]`}
             </button>
             <p className="footnote">marks are visual only. saved paths alone define who can spend.</p>
           </section>
 
           <section className="frame" aria-labelledby="compose-heading">
-            <header className="frame-heading"><h2 id="compose-heading">[2] COMPOSE PATH</h2><span className="counter">{paths.length}/{MAX_GUARDED_RULES}</span></header>
+            <header className="frame-heading"><h2 id="compose-heading">[2] COMPOSE PATH</h2><span className="counter">{paths.length}/{MAX_READ_ONCE_PATHS}</span></header>
+            <p className="compose-intro">select any keys, choose k-of-n and an optional date. keys may repeat across paths; the normalizer must remove every repeated script check.</p>
             <div className="checklist" role="group" aria-label="signers for this path" ref={checklistRef}>
               {rows.map((row, index) => {
                 const state = fieldState.get(row.id);
@@ -643,7 +627,7 @@ export default function Home() {
               {selectedCount === 1
                 ? <span className="k-static">1 of 1 (single key)</span>
                 : <>
-                  {Array.from({ length: MAX_GUARDED_KEYS }, (_, index) => {
+                  {Array.from({ length: MAX_READ_ONCE_KEYS }, (_, index) => {
                     const value = index + 1;
                     return <button type="button" key={value} className={`k-segment${threshold === value ? " is-active" : ""}`}
                       disabled={selectedCount < 2 || value > selectedCount}
@@ -675,13 +659,13 @@ export default function Home() {
                 <span className="leader" aria-hidden="true"></span>
                 <span className="check-value">{row.value}</span>
               </p>)}
-              {guardLine && (selectedCount > 0 || limitReached) ? <p className={`guard-line${guard.ok === false || limitReached ? " is-fail" : ""}`}>{guardLine}</p> : null}
+              {normalizerLine && (selectedCount > 0 || limitReached) ? <p className={`guard-line${normalizer.ok === false || limitReached ? " is-fail" : ""}`}>{normalizerLine}</p> : null}
             </div>
             <button className="add-path" type="button" onClick={addPath} disabled={Boolean(draftBlocked)}>[ ADD PATH ]</button>
           </section>
 
           <section className="frame" aria-labelledby="paths-heading">
-            <header className="frame-heading"><h2 id="paths-heading">[3] PATHS</h2><span className="counter">{paths.length}/{MAX_GUARDED_RULES}</span></header>
+            <header className="frame-heading"><h2 id="paths-heading">[3] VISUAL PATHS</h2><span className="counter">{paths.length}/{MAX_READ_ONCE_PATHS}</span></header>
             {paths.length === 0
               ? <p className="empty-paths">no paths. stdout is empty until the first path is saved.</p>
               : <ol className="path-list">{display.map((entry, index) => {
@@ -721,6 +705,14 @@ export default function Home() {
                 <p className="policy-close">any one satisfied path spends. there is no other door.</p>
               </>}
             {live.message ? <p className="err-line" role="status" aria-live="polite">! err: {lowerFirst(live.message)}</p> : null}
+          </section>
+
+          <section className="out-section">
+            <h3>normalization</h3>
+            {live.compiled ? <div className="normalization-readout">
+              <p><strong>{live.compiled.manifest.normalization.authored_key_occurrences}</strong> visual key uses <span aria-hidden="true">▸</span> <strong>{live.compiled.manifest.normalization.emitted_key_checks}</strong> emitted read-once checks</p>
+              <ul>{live.compiled.manifest.normalization.notes.map((note) => <li key={note}>[x] {note}</li>)}</ul>
+            </div> : <p className="waiting">{paths.length ? "no verified read-once form yet." : "—"}</p>}
           </section>
 
           <section className="out-section">
