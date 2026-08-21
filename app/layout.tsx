@@ -16,26 +16,26 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Mimir — Bitcoin Script Builder",
     description:
-      "Build up to five guarded P2WSH recovery paths from public keys, multisig thresholds, and UTC dates.",
+      "Terminal-style offline compiler for guarded Bitcoin P2WSH spending policies: five keys, five paths, live Miniscript, Script ASM, and address.",
     applicationName: "Mimir",
     robots: { index: false, follow: false, nocache: true },
     openGraph: {
       title: "Mimir — Bitcoin Script Builder",
-      description: "5 keys · 5 paths · Guarded P2WSH · Offline.",
+      description: "guarded p2wsh · 5 keys · 5 paths · offline",
       type: "website",
       images: [
         {
           url: `${origin}/og.png`,
           width: 1733,
           height: 907,
-          alt: "Mimir 5×5 guarded P2WSH recovery builder",
+          alt: "Mimir guarded P2WSH policy compiler",
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
       title: "Mimir — Bitcoin Script Builder",
-      description: "5 keys · 5 paths · Guarded P2WSH · Offline.",
+      description: "guarded p2wsh · 5 keys · 5 paths · offline",
       images: [`${origin}/og.png`],
     },
   };

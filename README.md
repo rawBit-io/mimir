@@ -1,9 +1,10 @@
 # Mimir
 
-Mimir is a one-page, offline visual builder for guarded Bitcoin recovery
-policies. Add up to five compressed public keys, then build up to five spending
-paths by dragging or clicking **Key**, **Multisig**, and **Time delay** blocks.
-The exact P2WSH Miniscript, Bitcoin Script ASM, and address update live.
+Mimir is a one-page, offline, terminal-style builder for guarded Bitcoin
+recovery policies. Register up to five compressed public keys, then compose up
+to five spending paths by checking signers, choosing a `K-of-N` threshold, and
+optionally setting an absolute UTC date lock. The exact P2WSH Miniscript,
+Bitcoin Script ASM, and address update live in a stdout pane.
 
 ## Guarded paths
 
@@ -15,8 +16,8 @@ unlock the Bitcoin:
 PATH A OR PATH B OR ... OR PATH E
 ```
 
-Mimir keeps the visual workflow flexible while accepting only combinations it
-can compile through a small deterministic model:
+Mimir keeps the composition workflow flexible while accepting only
+combinations it can compile through a small deterministic model:
 
 - paths whose signer sets are disjoint become independent OR branches;
 - paths may reuse the **exact same signer set** when their thresholds strictly
@@ -29,15 +30,16 @@ and 1-of-3 from the third. Dates are entered as calendar dates, not relative
 durations such as “one year after funding.”
 
 Keys remain available after a path is saved so an exact signer set can be used
-again. `OWNER` and `RECOVERY` marks are visual labels only; the blocks inside a
-saved path define the policy.
+again. `OWNER` and `RECOVERY` marks are visual labels only; the signers,
+threshold, and date saved in a path define the policy.
 
 The interface provides:
 
-- a five-key public-key registry;
-- a click-and-drag palette with Key, Multisig, and Time delay blocks;
-- one compact canvas for constructing and adding one path at a time;
-- inline compatibility feedback before an invalid combination reaches output;
+- a five-key public keyring;
+- one always-visible compose form — signer checklist, segmented `K` control,
+  and optional UTC date lock — building one path at a time;
+- a fixed pre-commit checklist with an explicit `GUARD` verdict before an
+  invalid combination reaches output;
 - optional public demo keys, clearly marked unsafe and blocked from address
   copying or JSON export;
 - live exact Miniscript, Bitcoin Script ASM, native P2WSH address, descriptor,

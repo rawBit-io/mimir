@@ -1,12 +1,12 @@
-# Mimir v5 — Guarded Visual Composer
+# Mimir v5 — Guarded Terminal Composer
 
 Status: pre-mainnet preview
 
 Template: `mimir-guarded-rules-v1`
 
 This document describes the implemented v5 application and compiler. Mimir is
-not a general Miniscript editor: it presents a small visual vocabulary and
-rejects rule combinations outside the guarded model.
+not a general Miniscript editor: it presents a small fixed set of terminal-style
+controls and rejects rule combinations outside the guarded model.
 
 ## 1. Policy model
 
@@ -19,13 +19,12 @@ PATH A OR PATH B OR ... OR PATH E
 
 Satisfying any one complete path is enough to spend. Each path contains:
 
-- one key, or a `K-of-N` signer set selected with a Multisig block; and
-- optionally, one absolute UTC calendar-date lock selected with a Time delay
-  block.
+- one key, or a `K-of-N` signer set checked off the keyring; and
+- optionally, one absolute UTC calendar-date lock.
 
 Owner and Recovery marks organize the interface visually. They do not grant,
-delay, or revoke spending rights. Only the blocks saved in a path enter the
-compiler.
+delay, or revoke spending rights. Only the signers, threshold, and date saved
+in a path enter the compiler.
 
 ## 2. Compatibility guard
 
@@ -49,22 +48,31 @@ It is deliberately narrower than arbitrary Miniscript composition.
 
 ## 3. One-page workflow
 
-1. Enter a label and compressed public key for each signer.
-2. Drag or click the required Key blocks into **PATH CANVAS**.
-3. For multiple keys, add the single Multisig block and choose `K`.
-4. Optionally add the single Time delay block and choose a UTC date.
-5. Add the path, then repeat for another spending alternative.
-6. Review compatibility feedback, the natural-language path list, exact
-   Miniscript, Bitcoin Script ASM, address, and technical details.
+The page is a single dark terminal session: a *stdin* column of three numbered
+frames and a *stdout* pane holding the compiler's live answer.
 
-The page constructs one path at a time. Multisig and Time delay can each occur
-at most once in the draft; removing one returns it to the palette. A key cannot
-occur twice inside one path, but saved use never disables its palette block.
-Changes compile live without a separate compile step.
+1. `[1] KEYRING` — enter a label and compressed public key for each signer.
+2. `[2] COMPOSE PATH` — check the signers for one path off the keyring, pick
+   `K` from a segmented control when more than one key is checked, and
+   optionally enable a UTC calendar-date lock.
+3. A fixed five-row **pre-commit check** (signers, key completeness,
+   threshold, timelock, compatibility guard) must read all-pass before
+   `[ ADD PATH ]` enables; failing rows and an explicit `GUARD ▸` sentence
+   are the explanation.
+4. Add the path, then repeat for another spending alternative.
+5. `[3] PATHS` and **STDOUT** — review the saved-path ladder, the numbered
+   per-path policy readout, exact Miniscript, Bitcoin Script ASM, address,
+   and technical details.
 
-The interface exposes Regtest and Signet. **Load demo** provides an instant
-public example; demo-derived artifacts are visibly unsafe, and the resulting
-address cannot be copied or the policy exported.
+The page constructs one path at a time. There is no drag-and-drop, palette,
+canvas, or compile button. A key cannot occur twice inside one path, but saved
+use never disables its keyring entry. Checking a key that belongs to a saved
+signer set restores that exact set for a ladder stage. Changes compile live.
+
+The interface exposes Regtest and Signet. **[load demo]** provides an instant
+public example behind an inline two-step confirmation; demo-derived artifacts
+are visibly unsafe, and the resulting address cannot be copied or the policy
+exported.
 
 ## 4. Inputs and limits
 
