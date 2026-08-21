@@ -141,6 +141,8 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
 .segmented-control { display: flex; }
 .segmented-control button + button { border-left: 0; }
 .effective-picker input { min-height: 30px; border: 1px solid #c3bfb1; background: transparent; padding: 5px 7px; font-size: 11px; }
+.effective-picker input[type="date"] { appearance: none; -webkit-appearance: none; }
+.effective-picker input[type="date"]::-webkit-calendar-picker-indicator { display: none; -webkit-appearance: none; }
 .effective-picker input:focus { border-color: var(--amber); outline: 0; }
 .activity-line { min-height: 18px; margin: 12px 0 0; color: var(--faint); font-size: 10.5px; line-height: 1.6; }
 
