@@ -169,9 +169,10 @@ test("one immediate key compiles to the exact minimal P2WSH witness script", () 
   assert.equal(compiled.witness_program_sha256, "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262");
   assert.equal(compiled.script_pubkey_hex, "00201863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262");
   assert.equal(compiled.address, "bcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qzf4jry");
+  assert.equal("invariants" in compiled, false);
+  assert.equal("warnings" in compiled, false);
   assert.equal(compiled.manifest.construction.type, "single-clause");
   assert.deepEqual(compiled.manifest.clauses[0].branch_selector_bottom_to_top, []);
-  assert.ok(compiled.invariants.every((invariant) => invariant.ok));
   assertSemanticEquivalence(compiled);
 });
 
@@ -213,7 +214,6 @@ test("arbitrary overlapping and repeated key sets compile without rewriting", ()
   ]));
   assert.equal(compiled.manifest.construction.emitted_branches, 3);
   assert.equal(compiled.manifest.construction.emitted_key_occurrences, 6);
-  assert.ok(compiled.warnings.some((warning) => /deliberately repeated/i.test(warning)));
   assertSemanticEquivalence(compiled);
 });
 
@@ -228,7 +228,6 @@ test("all 160 possible single-clause key-set, threshold, and timing shapes compi
         const compiled = compileDirectScriptPolicy(requestWith(keys, [{
           key_ids: selected.map((candidate) => candidate.id), threshold, unlock_unix,
         }]));
-        assert.ok(compiled.invariants.every((invariant) => invariant.ok));
         assertSemanticEquivalence(compiled);
       }
     }

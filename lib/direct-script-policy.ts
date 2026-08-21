@@ -77,12 +77,6 @@ export type DirectScriptPolicyManifest = {
   address: string;
 };
 
-export type InvariantResult = {
-  id: string;
-  label: string;
-  ok: boolean;
-};
-
 export type CompiledDirectScriptPolicy = {
   request: DirectScriptPolicyRequest;
   manifest: DirectScriptPolicyManifest;
@@ -96,8 +90,6 @@ export type CompiledDirectScriptPolicy = {
   witness_program_sha256: string;
   script_pubkey_hex: string;
   address: string;
-  invariants: InvariantResult[];
-  warnings: string[];
 };
 
 type NormalizedClause = {
@@ -448,27 +440,6 @@ function clauseSummary(clause: NormalizedClause, keys: Map<string, DirectScriptK
     : `${signer} · from ${utcFromUnix(clause.unlock_unix)}`;
 }
 
-function repeatedClauseWarnings(clauses: NormalizedClause[]): string[] {
-  const warnings: string[] = [];
-  for (let right = 1; right < clauses.length; right += 1) {
-    for (let left = 0; left < right; left += 1) {
-      const first = clauses[left];
-      const second = clauses[right];
-      const sameKeys = first.key_ids.length === second.key_ids.length &&
-        first.key_ids.every((id, index) => id === second.key_ids[index]);
-      if (!sameKeys || first.threshold !== second.threshold) continue;
-      const firstTime = first.unlock_unix ?? Number.NEGATIVE_INFINITY;
-      const secondTime = second.unlock_unix ?? Number.NEGATIVE_INFINITY;
-      if (firstTime <= secondTime) {
-        warnings.push(`Clause ${right + 1} is redundant because clause ${left + 1} permits the same threshold no later.`);
-      } else {
-        warnings.push(`Clause ${left + 1} is redundant because clause ${right + 1} permits the same threshold earlier.`);
-      }
-    }
-  }
-  return warnings;
-}
-
 export function compileDirectScriptPolicy(request: DirectScriptPolicyRequest): CompiledDirectScriptPolicy {
   const normalized = normalizeRequest(request);
   const policyInstructions = instructionsForPolicy(normalized.clauses);
@@ -478,6 +449,12 @@ export function compileDirectScriptPolicy(request: DirectScriptPolicyRequest): C
   const scriptPubkey = concatBytes(Uint8Array.of(0x00, 0x20), witnessProgram);
   const address = bech32.encode(NETWORKS[normalized.request.network].hrp, [0, ...bech32.toWords(witnessProgram)]);
   const opcodeCount = policyInstructions.filter((instruction) => instruction.kind === "opcode").length;
+  if (witnessScript.length > MAX_STANDARD_P2WSH_SCRIPT_BYTES) {
+    throw new Error(`Witness script exceeds the ${MAX_STANDARD_P2WSH_SCRIPT_BYTES}-byte P2WSH standardness limit.`);
+  }
+  if (opcodeCount > MAX_SCRIPT_OPS) {
+    throw new Error(`Witness script exceeds Bitcoin Script's ${MAX_SCRIPT_OPS}-opcode limit.`);
+  }
   const sigopCount = normalized.clauses.reduce(
     (total, clause) => total + (clause.public_keys.length === 1 ? 1 : clause.public_keys.length),
     0,
@@ -532,90 +509,6 @@ export function compileDirectScriptPolicy(request: DirectScriptPolicyRequest): C
   };
   const canonicalManifest = canonicalizeJson(manifest);
   const policyManifestSha256 = sha256Hex(canonicalManifest);
-  const emittedPublicKeys = policyInstructions
-    .filter((instruction): instruction is Extract<Instruction, { kind: "push" }> =>
-      instruction.kind === "push" && instruction.data.length === 33)
-    .map((instruction) => bytesToHex(instruction.data));
-  const expectedPublicKeys = normalized.clauses.flatMap((clause) => clause.public_keys);
-  const invariants: InvariantResult[] = [
-    {
-      id: "restricted-direct-script-template",
-      label: "Every branch is optional absolute CLTV followed by one CHECKSIG or CHECKMULTISIG threshold",
-      ok: normalized.clauses.length >= 1 && normalized.clauses.length <= MAX_DIRECT_SCRIPT_CLAUSES,
-    },
-    {
-      id: "one-authored-clause-one-script-branch",
-      label: "Every authored clause is emitted once; no clause is normalized, factored, merged, or removed",
-      ok: manifest.construction.authored_clauses === manifest.construction.emitted_branches,
-    },
-    {
-      id: "explicit-public-key-occurrences",
-      label: "Every selected public-key occurrence remains explicit in the witness script",
-      ok: emittedPublicKeys.length === expectedPublicKeys.length &&
-        emittedPublicKeys.every((key, index) => key === expectedPublicKeys[index]),
-    },
-    {
-      id: "minimal-branch-selectors",
-      label: "Alternative branches use only minimal false/true selector items",
-      ok: manifestClauses.every((clause) => clause.branch_selector_bottom_to_top.every((item) => item === 0 || item === 1)),
-    },
-    {
-      id: "standard-script-size",
-      label: "Witness script is within the 3,600-byte P2WSH standardness limit",
-      ok: witnessScript.length <= MAX_STANDARD_P2WSH_SCRIPT_BYTES,
-    },
-    {
-      id: "script-op-limit",
-      label: "Static non-push opcode count is within Bitcoin Script's 201-op limit",
-      ok: opcodeCount <= MAX_SCRIPT_OPS,
-    },
-    {
-      id: "witness-program",
-      label: "SHA256(witness script) equals the P2WSH witness program",
-      ok: sha256Hex(witnessScript) === bytesToHex(witnessProgram),
-    },
-    {
-      id: "script-pubkey",
-      label: "scriptPubKey is OP_0 PUSH32 followed by the exact witness program",
-      ok: bytesToHex(scriptPubkey) === `0020${bytesToHex(witnessProgram)}`,
-    },
-    {
-      id: "address",
-      label: "Address encodes the exact witness program for the selected network",
-      ok: bech32.encode(NETWORKS[normalized.request.network].hrp, [0, ...bech32.toWords(witnessProgram)]) === address,
-    },
-    {
-      id: "canonical-manifest-hash",
-      label: "Canonical manifest hash is reproducible from the exact exported bytes",
-      ok: policyManifestSha256 === sha256Hex(canonicalizeJson(JSON.parse(canonicalManifest))),
-    },
-  ];
-  if (invariants.some((invariant) => !invariant.ok)) {
-    throw new Error("An internal Direct Script compiler invariant failed; output stopped.");
-  }
-
-  const usedKeyIds = new Set(normalized.clauses.flatMap((clause) => clause.key_ids));
-  const unusedKeys = normalized.request.keys.filter((key) => !usedKeyIds.has(key.id));
-  const warnings = [
-    ...repeatedClauseWarnings(normalized.clauses),
-    "Each clause is an alternative spending branch; satisfying any one complete clause can spend the output.",
-    "Public keys selected in several clauses are deliberately repeated in the witness script; Bitcoin Script permits this.",
-    "For multiple clauses, recovery software must add the documented minimal branch selector items to the witness.",
-    "CHECKMULTISIG clauses require one leading empty witness item and signatures ordered to match the displayed public-key order.",
-    "A delayed spend requires transaction nLockTime at least equal to its timestamp and a non-final nSequence on this input.",
-    "Bitcoin evaluates timestamp locks using median time past, so practical activation can occur after displayed UTC midnight.",
-    "Raw public keys define one fixed P2WSH address; there is no child-key derivation or address rotation.",
-    "A generic watch-only descriptor does not contain this spending logic; retain the policy JSON and rehearse every branch.",
-  ];
-  if (unusedKeys.length > 0) {
-    warnings.unshift(
-      `${unusedKeys.length} registered ${unusedKeys.length === 1 ? "key is" : "keys are"} unused: ${unusedKeys.map((key) => key.label).join(", ")}.`,
-    );
-  }
-  if (normalized.request.network === "bitcoin") {
-    warnings.push("Mainnet output is preview-grade. Rehearse the exact witness script and every branch on Regtest first.");
-  }
-
   return {
     request: cloneJson(normalized.request),
     manifest: cloneJson(manifest),
@@ -629,7 +522,5 @@ export function compileDirectScriptPolicy(request: DirectScriptPolicyRequest): C
     witness_program_sha256: manifest.script.witness_program_sha256,
     script_pubkey_hex: manifest.script.script_pubkey_hex,
     address,
-    invariants,
-    warnings,
   };
 }
