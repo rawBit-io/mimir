@@ -146,7 +146,7 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
 .effective-picker input:focus { border-color: var(--amber); outline: 0; }
 .activity-line { min-height: 18px; margin: 12px 0 0; color: var(--faint); font-size: 10.5px; line-height: 1.6; }
 
-.artifacts-section, .verification-section { padding-top: 34px; }
+.artifacts-section { padding-top: 34px; }
 .error-sheet { border: 1px solid var(--red); background: var(--red-soft); padding: 16px 18px; color: #5a3129; }
 .error-sheet strong { display: block; padding-bottom: 9px; color: var(--red); font-size: 10.5px; letter-spacing: .16em; }
 .error-sheet p { margin: 0; font-size: 12px; }
@@ -167,30 +167,10 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
 .network-select { margin-left: auto; }
 .network-select select { min-height: 27px; border: 1px solid #c3bfb1; background: transparent; padding: 3px 26px 3px 8px; color: var(--text); font-size: 9.5px; letter-spacing: .1em; }
 
-.direct-construction-note { margin-bottom: 14px; border-left: 3px solid var(--green); background: var(--green-soft); padding: 12px 14px; }
-.direct-construction-note strong { color: var(--green); font-size: 11px; }
-.direct-construction-note p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
-.verification-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--ink); border-left: 1px solid var(--rule-soft); }
-.verification-grid > div { display: flex; gap: 8px; min-height: 66px; border-right: 1px solid var(--rule-soft); border-bottom: 1px solid var(--rule-soft); padding: 11px 13px; }
-.verification-grid > div > span { color: var(--green); font-size: 11px; }
-.verification-grid p { margin: 0; color: var(--faint); font-size: 10.5px; line-height: 1.5; }
-.verification-grid strong { display: block; color: var(--text); font-size: 10.5px; font-weight: 400; }
-.technical-details { margin-top: 16px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
-.technical-details summary { padding: 12px 2px; color: var(--muted); cursor: pointer; font-size: 10px; letter-spacing: .16em; }
-.technical-details > div { padding: 0 0 12px; }
-.technical-item + .technical-item { margin-top: 10px; }
-.technical-item > div { display: flex; align-items: center; gap: 10px; padding-bottom: 5px; }
-.technical-item h4 { flex: 1; margin: 0; color: var(--faint); font-size: 9px; font-weight: 400; letter-spacing: .16em; }
-.technical-item code { display: block; max-height: 100px; overflow: auto; background: var(--code); padding: 10px 12px; color: var(--code-text); font-size: 10px; line-height: 1.65; overflow-wrap: anywhere; word-break: break-all; }
-.notice-list { padding-top: 16px; }
-.notice-list h3 { margin: 0 0 8px; color: var(--faint); font-size: 9.5px; font-weight: 400; letter-spacing: .2em; }
-.notice-list p { display: flex; gap: 10px; margin: 0; padding: 3px 0; color: var(--text); font-family: var(--serif); font-size: 15px; line-height: 1.6; }
-.notice-list p span { color: var(--amber); font-family: var(--mono); font-size: 11px; }
 .export-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 22px; }
 .export-row button { min-height: 38px; border: 1px solid var(--ink); background: var(--ink); padding: 10px 18px; color: var(--paper); font-size: 10.5px; font-weight: 700; letter-spacing: .16em; }
 .export-row button:hover:not(:disabled) { border-color: var(--green); background: var(--green); }
 .export-row span { color: var(--faint); font-size: 10px; }
-.empty-verification { border: 1px dashed var(--rule-strong); padding: 18px; color: var(--ghost); font-family: var(--serif); font-size: 15px; }
 
 .sheet-footer { display: grid; grid-template-columns: 1fr 1fr 2fr; gap: 28px; margin: 34px 46px 0; border-top: 1px solid var(--ink); padding: 18px 0 40px; }
 .sheet-footer > div, .sheet-footer > p { margin: 0; color: var(--faint); font-size: 10.5px; line-height: 1.9; }
@@ -227,7 +207,6 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
   .artifact-block pre, .artifact-block > p { font-size: 11px; }
   .artifact-block pre.asm-code { font-size: 12px; }
   .network-select select { min-height: 44px; font-size: 16px; }
-  .verification-grid { grid-template-columns: 1fr; }
   .sheet-footer { grid-template-columns: 1fr 1fr; margin-inline: 24px; }
   .sheet-footer > p { grid-column: 1 / -1; }
 }
@@ -261,7 +240,7 @@ input:focus, select:focus, button:focus-visible, summary:focus-visible { outline
   .sheet-shell { padding: 0; }
   .spec-sheet { width: 100%; border: 0; box-shadow: none; }
   button { display: none !important; }
-  .artifact-block pre, .artifact-block > p, .technical-item code { max-height: none; }
+  .artifact-block pre, .artifact-block > p { max-height: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

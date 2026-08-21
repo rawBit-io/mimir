@@ -99,14 +99,6 @@ function isUiNetwork(value: string): value is UiNetwork {
   return value === "bitcoin" || value === "testnet" || value === "signet" || value === "regtest";
 }
 
-function cluster4(value: string): string {
-  return value.match(/.{1,4}/g)?.join(" ") ?? value;
-}
-
-function lowerFirst(value: string): string {
-  return value ? value.charAt(0).toLowerCase() + value.slice(1) : value;
-}
-
 function readableDate(value: string | null): string {
   if (!value) return "immediately";
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -242,13 +234,6 @@ function CopyButton({ value, label, disabled = false }: { value: string; label: 
       {state === "copied" ? `${label} copied.` : state === "failed" ? `${label} could not be copied.` : ""}
     </span>
   </>;
-}
-
-function TechnicalItem({ label, value, clustered }: { label: string; value: string; clustered?: boolean }) {
-  return <div className="technical-item">
-    <div><h4>{label}</h4><CopyButton key={value} value={value} label={label} /></div>
-    <code>{clustered ? cluster4(value) : value}</code>
-  </div>;
 }
 
 function formatBitcoinScript(asm: string): string {
@@ -595,22 +580,8 @@ export default function Home() {
               const value = event.currentTarget.value;
               if (isUiNetwork(value)) setNetwork(value);
             }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><CopyButton value={live.compiled.address} label="P2WSH address" disabled={addressAndExportBlocked} /></header><p>{live.compiled.address}</p><small>The Bitcoin Core funding command belongs to the next workflow step.</small></section>
-          </div> : null}
-        </section>
-
-        <section className="sheet-section verification-section" aria-labelledby="verification-heading">
-          <header className="section-title"><span>§4</span><h2 id="verification-heading">VERIFICATION</h2><p>compiler checks for the exact issued artifacts</p><i></i></header>
-          {live.compiled ? <>
-            <div className="direct-construction-note"><strong>{live.compiled.manifest.construction.authored_clauses} authored clauses → {live.compiled.manifest.construction.emitted_branches} explicit Script branches</strong><p>No policy rewriting or key factoring. Every clause and every repeated public-key occurrence remains visible in the script.</p></div>
-            <div className="verification-grid">{live.compiled.invariants.map((invariant) => <div key={invariant.id}><span>{invariant.ok ? "✓" : "×"}</span><p><strong>{invariant.ok ? "passed" : "failed"}</strong>{invariant.label}</p></div>)}</div>
-            <details className="technical-details"><summary>TECHNICAL DETAILS · HEX · HASH</summary><div>
-              <TechnicalItem label="witness script · hex" value={live.compiled.witness_script_hex} />
-              <TechnicalItem label="scriptpubkey · hex" value={live.compiled.script_pubkey_hex} />
-              <TechnicalItem label="manifest · sha-256" value={live.compiled.policy_manifest_sha256} clustered />
-            </div></details>
-            <div className="notice-list"><h3>NOTICES</h3>{live.compiled.warnings.map((warning) => <p key={warning}><span>!</span>{lowerFirst(warning)}</p>)}</div>
             <div className="export-row"><button type="button" onClick={downloadPolicy} disabled={addressAndExportBlocked}>↓ DOWNLOAD POLICY JSON</button><span>{addressAndExportBlocked ? `blocked · ${hasDemoKey ? "demo keys" : "review date"}` : `manifest sha256 ${live.compiled.policy_manifest_sha256.slice(0, 20)}…`}</span></div>
-          </> : <div className="empty-verification">Verification appears after successful compilation.</div>}
+          </div> : null}
         </section>
 
         <footer className="sheet-footer">

@@ -36,7 +36,7 @@ test("server-renders the compact specification-sheet interface", async () => {
   assert.match(html, />KEYHOLDERS<\/h2>/);
   assert.match(html, />SPENDING CLAUSES<\/h2>/);
   assert.match(html, />COMPILED ARTIFACTS<\/h2>/);
-  assert.match(html, />VERIFICATION<\/h2>/);
+  assert.doesNotMatch(html, />VERIFICATION<\/h2>/);
   assert.match(html, /compressed public keys, entered by hand/);
   assert.match(html, /each clause becomes one explicit Script branch/);
   assert.match(html, /KEYHOLDERS IN THIS CLAUSE/);
@@ -84,6 +84,7 @@ test("source keeps the restricted Direct Script compiler, public-only input, and
   assert.match(page, /Address copy and JSON export are blocked/);
   assert.match(page, /disabled=\{addressAndExportBlocked\}/);
   assert.match(page, /DOWNLOAD POLICY JSON/);
+  assert.doesNotMatch(page, /verification-summary|verification-grid|VERIFICATION DETAILS|OPERATING NOTICES/);
   assert.match(page, /direct-script-policy/);
   assert.match(page, /compileDirectScriptPolicy/);
   assert.match(page, /mimir-direct-script-policy-request/);
