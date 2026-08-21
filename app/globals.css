@@ -60,9 +60,9 @@ code, pre { font: inherit; }
 }
 .brand, .top-actions { display: flex; align-items: center; gap: 14px; }
 .brand strong { color: var(--bright); font-size: 16px; letter-spacing: .22em; }
-.brand span, .network-label { color: var(--faint); font-size: 10px; letter-spacing: .15em; }
+.brand span { color: var(--faint); font-size: 10px; letter-spacing: .15em; }
 .top-actions { gap: 8px; }
-.network-button, .plain-button {
+.plain-button {
   min-height: 32px;
   border: 1px solid var(--line);
   color: var(--dim);
@@ -71,8 +71,7 @@ code, pre { font: inherit; }
   letter-spacing: .12em;
   font-size: 11px;
 }
-.network-button:hover, .plain-button:hover { color: var(--bright); border-color: var(--line-strong); }
-.network-button.is-active { color: var(--bg); border-color: var(--green); background: var(--green); }
+.plain-button:hover { color: var(--bright); border-color: var(--line-strong); }
 
 .page-wrap { width: 100%; max-width: 1680px; margin: 0 auto; padding: 0 clamp(16px, 2vw, 32px) 36px; }
 .hero {
@@ -364,6 +363,21 @@ input::placeholder { color: var(--faint); opacity: 1; }
 .panel-heading, .technical-item > div { display: flex; align-items: center; gap: 12px; }
 .panel-heading h3, .technical-item h4 { flex: 1; }
 .panel-heading > span { color: var(--faint); font-size: 11px; }
+.address-panel .panel-heading { flex-wrap: wrap; }
+.network-select select {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--bright);
+  background: var(--panel);
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: .12em;
+  cursor: pointer;
+}
+.network-select select:hover { border-color: var(--green); }
+.network-select option { color: var(--fg); background: var(--panel); }
 .copy {
   min-width: 54px;
   min-height: 34px;
@@ -384,6 +398,7 @@ input::placeholder { color: var(--faint); opacity: 1; }
   line-height: 1.55;
 }
 .address { margin-top: 10px; color: var(--green); overflow-wrap: anywhere; font-size: 13px; }
+.address-note { margin-top: 7px; color: var(--faint); font-size: 10px; letter-spacing: .08em; }
 .blocked { margin-top: 8px; color: var(--red); font-size: 11px; letter-spacing: .1em; }
 .technical-details { padding: 0 12px 12px; }
 .technical-details summary { min-height: 42px; display: flex; align-items: center; cursor: pointer; list-style: none; }
@@ -421,8 +436,7 @@ input::placeholder { color: var(--faint); opacity: 1; }
   .brand { flex-wrap: wrap; }
   .brand span:last-child { width: 100%; }
   .top-actions { width: 100%; flex-wrap: wrap; }
-  .network-label { width: 100%; }
-  .network-button, .plain-button { min-height: 44px; flex: 1; }
+  .plain-button { min-height: 44px; flex: 1; }
   .hero { padding-top: 28px; }
   .hero h1 { white-space: normal; }
   .hero h1 br { display: none; }
@@ -439,6 +453,7 @@ input::placeholder { color: var(--faint); opacity: 1; }
   .registry-row .row-number { grid-row: 1 / 3; align-self: start; padding-top: 12px; }
   .registry-row .icon-remove { grid-column: 3; grid-row: 1; }
   .registry-row input, .date-control input { min-height: 44px; font-size: 16px; }
+  .network-select select { min-height: 44px; font-size: 16px; }
   .icon-remove, .node-remove, .threshold-control button { min-width: 44px; min-height: 44px; }
   .key-status { grid-column: 2 / 4; flex-direction: column; gap: 0; }
   .block-palette { display: grid; grid-template-columns: 1fr 1fr; }

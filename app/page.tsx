@@ -13,7 +13,7 @@ import {
   type ReadOncePolicyRequest,
 } from "../lib/read-once-normalizer";
 
-type UiNetwork = Exclude<ReadOnceNetwork, "bitcoin">;
+type UiNetwork = ReadOnceNetwork;
 type KeyRow = { id: string; label: string; publicKey: string };
 type SigningMode = "key" | "multisig" | null;
 type PolicyBranch = {
@@ -39,6 +39,13 @@ const DEMO_PUBLIC_KEYS = [
   "02f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
   "02e493dbf1c10d80f3581e4904930b1404cc6c13900ee0758474fa94abe8c4cd13",
 ] as const;
+
+const NETWORK_OPTIONS: ReadonlyArray<{ value: UiNetwork; label: string }> = [
+  { value: "bitcoin", label: "MAINNET" },
+  { value: "testnet", label: "TESTNET" },
+  { value: "signet", label: "SIGNET" },
+  { value: "regtest", label: "REGTEST" },
+];
 
 function firstFutureDate(): string {
   const date = new Date();
@@ -99,7 +106,7 @@ function demoBranches(): PolicyBranch[] {
 }
 
 function isUiNetwork(value: string): value is UiNetwork {
-  return value === "regtest" || value === "signet";
+  return value === "bitcoin" || value === "testnet" || value === "signet" || value === "regtest";
 }
 
 function shortKey(value: string): string {
@@ -526,10 +533,6 @@ export default function Home() {
       <header className="topbar">
         <div className="brand"><strong>MIMIR</strong><span>v6 · PREVIEW</span><span>template {TEMPLATE_ID_READ_ONCE}</span></div>
         <div className="top-actions">
-          <span className="network-label">NETWORK</span>
-          {(["regtest", "signet"] as const).map((value) => <button key={value} type="button"
-            className={`network-button${network === value ? " is-active" : ""}`}
-            aria-pressed={network === value} onClick={() => { if (isUiNetwork(value)) setNetwork(value); }}>{value.toUpperCase()}</button>)}
           <button className="plain-button" type="button" onClick={requestDemo} onBlur={() => setArmed(null)}>
             {armed === "demo" ? "REALLY LOAD?" : "DEMO"}
           </button>
@@ -699,9 +702,17 @@ export default function Home() {
               {live.compiled ? <pre><code>{live.compiled.asm}</code></pre> : <p className="empty-output">—</p>}
             </section>
 
-            <section className="script-panel"><div className="panel-heading"><h3>{network.toUpperCase()} P2WSH ADDRESS</h3>
+            <section className="script-panel address-panel"><div className="panel-heading"><h3>P2WSH ADDRESS · ARTIFACT</h3>
+              <label className="network-select"><span className="sr-only">Bitcoin network</span><select
+                aria-label="Bitcoin network" value={network} onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  if (isUiNetwork(value)) setNetwork(value);
+                }}>
+                {NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select></label>
               {live.compiled && !addressAndExportBlocked ? <CopyButton value={live.compiled.address} label="P2WSH address" /> : null}</div>
               {live.compiled ? <p className="address">{live.compiled.address}</p> : <p className="empty-output">—</p>}
+              <p className="address-note">OUTPUT ARTIFACT · the Bitcoin Core funding command belongs to the next workflow step.</p>
               {live.compiled && addressAndExportBlocked ? <p className="blocked">COPY BLOCKED · {hasDemoKey ? "DEMO KEYS" : "REVIEW DATE"}</p> : null}
             </section>
 

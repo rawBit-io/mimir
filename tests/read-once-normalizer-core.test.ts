@@ -241,10 +241,15 @@ test("input validation enforces the 5 by 5 surface and supported networks", () =
   const signet = compileReadOncePolicy(requestWith([signer], [
     { key_ids: [signer.id], threshold: 1, unlock_unix: null },
   ], "signet"));
+  const testnet = compileReadOncePolicy(requestWith([signer], [
+    { key_ids: [signer.id], threshold: 1, unlock_unix: null },
+  ], "testnet"));
   const bitcoin = compileReadOncePolicy(requestWith([signer], [
     { key_ids: [signer.id], threshold: 1, unlock_unix: null },
   ], "bitcoin"));
   assert.match(regtest.address, /^bcrt1q/);
   assert.match(signet.address, /^tb1q/);
+  assert.match(testnet.address, /^tb1q/);
+  assert.equal(testnet.address, signet.address);
   assert.match(bitcoin.address, /^bc1q/);
 });

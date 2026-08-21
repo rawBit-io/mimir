@@ -69,7 +69,8 @@ The single terminal-style page has four working areas:
    condition are joined by AND.
 4. `LIVE BITCOIN SCRIPT` shows the authored policy, normalization counts and
    notes, exact Miniscript, Script ASM, address, descriptor, script hex,
-   checks, warnings, and export.
+   checks, warnings, and export. Network selection sits beside the address
+   artifact rather than in the page header.
 
 Click, touch, and keyboard interaction provide the complete workflow; native
 drag-and-drop is an additional desktop interaction. A key stays reusable in
@@ -77,8 +78,8 @@ every branch. MULTISIG and TIMELOCK can each occur at most once per branch.
 OR adds another branch, up to five. An incomplete or unsupported tree remains
 editable but emits no address. There is no separate compile or save button.
 
-The page exposes Regtest and Signet. Mainnet remains available only through the
-compiler API. The demo deliberately reuses Owner across four visual paths and
+The address dropdown exposes Mainnet, Testnet, Signet, and Regtest. The demo
+deliberately reuses Owner across four visual paths and
 shows that thirteen visual key uses normalize to four emitted key checks. Demo
 address copying and export are blocked.
 
@@ -134,8 +135,8 @@ rechecks the current UTC date at click time.
 }
 ```
 
-Compiler networks are `bitcoin`, `signet`, and `regtest`; generic Bitcoin
-testnet is not supported. Caller key IDs are references and do not survive
+Compiler networks are `bitcoin`, `testnet`, `signet`, and `regtest`. Caller key
+IDs are references and do not survive
 canonicalization. Complete unused keys are retained in the manifest and
 reported in a warning.
 
@@ -178,8 +179,10 @@ Successful compilation returns:
 - SHA-256 of the exact canonical manifest bytes;
 - invariants and operational warnings.
 
-Address prefixes are `bc1q` for mainnet, `tb1q` for Signet, and `bcrt1q` for
-Regtest. Network changes the address and manifest, not the witness script.
+Address prefixes are `bc1q` for Mainnet, `tb1q` for Testnet and Signet, and
+`bcrt1q` for Regtest. Network is recorded in the manifest and never changes the
+witness script. Testnet and Signet deliberately produce the same address for
+the same script because both use the `tb` human-readable prefix.
 Labels and unused keys are manifest data, so they may change the manifest hash
 without changing the script.
 
@@ -192,7 +195,9 @@ timestamp locks using median time past, so practical activation can occur
 after the displayed UTC midnight.
 
 The semantic comparison is a bounded compiler check, not Bitcoin Script
-execution or a proof that unrelated dependencies are correct. Mimir does not
-construct transactions, sign, broadcast, monitor funds, derive child keys, or
-rotate addresses. Independently reproduce and test the exact descriptor,
-script, address, and recovery procedure before funding.
+execution or a proof that unrelated dependencies are correct. The address is
+an output artifact; the planned Bitcoin Core command, OP_RETURN encoding, and
+dust transaction workflow are not implemented in v6. Mimir does not construct
+transactions, sign, broadcast, monitor funds, derive child keys, or rotate
+addresses. Independently reproduce and test the exact descriptor, script,
+address, and recovery procedure before funding.

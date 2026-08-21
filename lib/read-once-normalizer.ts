@@ -18,7 +18,7 @@ export const TEMPLATE_ID_READ_ONCE = "mimir-read-once-normalizer-v1" as const;
 export const MAX_READ_ONCE_KEYS = 5;
 export const MAX_READ_ONCE_PATHS = 5;
 
-export type ReadOnceNetwork = "bitcoin" | "signet" | "regtest";
+export type ReadOnceNetwork = "bitcoin" | "testnet" | "signet" | "regtest";
 
 export type ReadOnceKey = {
   id: string;
@@ -117,6 +117,7 @@ export type CompiledReadOncePolicy = {
 
 const NETWORKS: Record<ReadOnceNetwork, { hrp: string }> = {
   bitcoin: { hrp: "bc" },
+  testnet: { hrp: "tb" },
   signet: { hrp: "tb" },
   regtest: { hrp: "bcrt" },
 };

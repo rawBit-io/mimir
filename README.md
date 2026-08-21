@@ -63,7 +63,7 @@ The current implementation provides:
 - fail-closed read-once normalization on every complete tree change;
 - live exact Miniscript, Script ASM, P2WSH address, descriptor, script bytes,
   invariants, warnings, and canonical JSON export;
-- Regtest and Signet selection; and
+- Mainnet, Testnet, Signet, and Regtest selection beside the address artifact; and
 - public demo keys that are visibly unsafe and blocked from address copying or
   JSON export.
 
@@ -103,7 +103,9 @@ fail-closed rejection, and signer/time semantic equivalence.
 
 ## Safety status
 
-Mimir emits native SegWit v0 P2WSH, not Taproot. It is preview software. Verify
+Mimir emits native SegWit v0 P2WSH, not Taproot. The address is currently an
+output artifact; Mimir does not yet build the planned Bitcoin Core funding
+command, OP_RETURN payload, or dust transaction. It is preview software. Verify
 the descriptor, script, address, threshold, timelocks, and recovery procedure
 independently on Regtest or Signet before funding. Never paste a private key or
 seed phrase into this app.

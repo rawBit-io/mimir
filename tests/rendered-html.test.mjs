@@ -48,6 +48,11 @@ test("server-renders the terminal session interface", async () => {
   assert.match(html, /\+ ADD OR BRANCH/);
   assert.match(html, /LIVE/);
   assert.match(html, /TECHNICAL DETAILS · HEX · CHECKS/);
+  assert.match(html, /P2WSH ADDRESS · ARTIFACT/);
+  assert.match(html, /<option value="bitcoin">MAINNET<\/option>/);
+  assert.match(html, /<option value="testnet">TESTNET<\/option>/);
+  assert.match(html, /<option value="signet">SIGNET<\/option>/);
+  assert.match(html, /<option value="regtest" selected="">REGTEST<\/option>/);
   assert.match(html, /Nothing leaves this page\./);
   assert.match(html, /http:\/\/localhost\/og-v2\.png/);
   assert.match(html, /noindex/);
@@ -73,6 +78,8 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   assert.match(page, /DROP KEY OR MULTISIG HERE/);
   assert.match(page, /ADD OR BRANCH/);
   assert.match(page, /SPENDING PATHS/);
+  assert.match(page, /P2WSH ADDRESS · ARTIFACT/);
+  assert.match(page, /Bitcoin Core funding command belongs to the next workflow step/);
   assert.match(page, /LIVE/);
   assert.match(page, /BITCOIN SCRIPT/);
   assert.match(page, /DEMO KEYS — DO NOT FUND/);
@@ -96,7 +103,8 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   assert.match(page, /dataTransfer/);
   assert.match(page, /type="date"/);
   assert.match(page, /max="2038-01-19"/);
-  assert.match(page, /value === "regtest" \|\| value === "signet"/);
+  assert.match(page, /value === "bitcoin" \|\| value === "testnet" \|\| value === "signet" \|\| value === "regtest"/);
+  assert.doesNotMatch(page, /network-button/);
   assert.doesNotMatch(page, /type="checkbox"|lucide-react|window\.confirm/);
   assert.doesNotMatch(
     page,
