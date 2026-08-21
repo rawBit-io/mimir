@@ -251,91 +251,40 @@ function TechnicalItem({ label, value, clustered }: { label: string; value: stri
   </div>;
 }
 
-type AsmInstruction = {
-  depth: number;
-  kind: "control" | "opcode" | "number" | "pubkey" | "data";
-  meaning: string;
-  token: string;
-};
-
-function decodeScriptNumber(token: string): number | null {
-  const match = token.match(/^<([0-9a-fA-F]+)>$/);
-  if (!match || match[1].length % 2 !== 0 || match[1].length > 10) return null;
-  const bytes = match[1].match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16));
-  if (!bytes?.length) return null;
-  const last = bytes.length - 1;
-  const negative = (bytes[last] & 0x80) !== 0;
-  bytes[last] &= 0x7f;
-  const value = bytes.reduce((sum, byte, index) => sum + byte * 2 ** (8 * index), 0);
-  return negative ? -value : value;
-}
-
-function asmMeaning(token: string, next: string | undefined, keyLabels: Map<string, string>): Pick<AsmInstruction, "kind" | "meaning"> {
-  if (/^(?:0|[1-9]|1[0-6])$/.test(token)) {
-    return { kind: "number", meaning: next === "OP_CHECKMULTISIG" ? "KEY COUNT" : next?.startsWith("<02") || next?.startsWith("<03") ? "SIGNATURES" : "NUMBER" };
-  }
-  const pushed = token.match(/^<([0-9a-fA-F]*)>$/);
-  if (pushed) {
-    const publicKey = pushed[1].toLowerCase();
-    if (publicKey.length === 66 && /^(?:02|03)/.test(publicKey)) {
-      return { kind: "pubkey", meaning: keyLabels.get(publicKey) ? `PUBLIC KEY · ${keyLabels.get(publicKey)}` : "PUBLIC KEY" };
-    }
-    if (next === "OP_CHECKLOCKTIMEVERIFY") {
-      const locktime = decodeScriptNumber(token);
-      const date = locktime !== null && locktime >= 500_000_000 && locktime <= 2_147_483_647
-        ? new Date(locktime * 1_000).toISOString().slice(0, 10)
-        : null;
-      return { kind: "data", meaning: date ? `LOCKTIME · ${date} UTC` : "LOCKTIME DATA" };
-    }
-    return { kind: "data", meaning: "PUSH DATA" };
-  }
-  const meanings: Record<string, string> = {
-    OP_IF: "IF BRANCH",
-    OP_NOTIF: "IF NOT BRANCH",
-    OP_ELSE: "ELSE BRANCH",
-    OP_ENDIF: "END BRANCH",
-    OP_CHECKLOCKTIMEVERIFY: "CHECK LOCKTIME",
-    OP_CHECKSIG: "CHECK SIGNATURE",
-    OP_CHECKSIGVERIFY: "CHECK + VERIFY SIGNATURE",
-    OP_CHECKMULTISIG: "CHECK MULTISIG",
-    OP_CHECKMULTISIGVERIFY: "CHECK + VERIFY MULTISIG",
-    OP_VERIFY: "REQUIRE TRUE",
-    OP_EQUAL: "COMPARE",
-    OP_EQUALVERIFY: "COMPARE + VERIFY",
-    OP_ADD: "ADD",
-    OP_BOOLAND: "BOOLEAN AND",
-    OP_BOOLOR: "BOOLEAN OR",
-    OP_DUP: "DUPLICATE",
-    OP_SWAP: "SWAP",
-  };
-  const control = token === "OP_IF" || token === "OP_NOTIF" || token === "OP_ELSE" || token === "OP_ENDIF";
-  return { kind: control ? "control" : "opcode", meaning: meanings[token] ?? "OPCODE" };
-}
-
-function formatAsm(asm: string, keyLabels: Map<string, string>): AsmInstruction[] {
+function formatBitcoinScript(asm: string): string {
   const tokens = asm.trim().split(/\s+/).filter(Boolean);
+  const control = new Set(["OP_IF", "OP_NOTIF", "OP_ELSE", "OP_ENDIF"]);
+  const lineEnd = new Set([
+    "OP_VERIFY", "OP_DROP", "OP_CHECKSIG", "OP_CHECKSIGVERIFY",
+    "OP_CHECKMULTISIG", "OP_CHECKMULTISIGVERIFY", "OP_EQUAL",
+    "OP_EQUALVERIFY", "OP_NUMEQUAL", "OP_NUMEQUALVERIFY", "OP_0NOTEQUAL",
+    "OP_BOOLAND", "OP_BOOLOR",
+  ]);
+  const lines: string[] = [];
+  let current: string[] = [];
   let depth = 0;
-  return tokens.map((token, index) => {
-    if (token === "OP_ELSE" || token === "OP_ENDIF") depth = Math.max(0, depth - 1);
-    const instruction = { depth, token, ...asmMeaning(token, tokens[index + 1], keyLabels) };
-    if (token === "OP_IF" || token === "OP_NOTIF" || token === "OP_ELSE") depth += 1;
-    return instruction;
-  });
-}
+  const flush = () => {
+    if (!current.length) return;
+    lines.push(`${"    ".repeat(depth)}${current.join(" ")}`);
+    current = [];
+  };
 
-function BitcoinScriptView({ asm, keyLabels }: { asm: string; keyLabels: Map<string, string> }) {
-  const instructions = formatAsm(asm, keyLabels);
-  return <>
-    <div className="asm-view" role="region" aria-label="Formatted Bitcoin Script instructions" tabIndex={0}>
-      <div className="asm-columns" aria-hidden="true"><span>STEP</span><span>MEANING</span><span>INSTRUCTION</span></div>
-      <ol>{instructions.map((instruction, index) => <li key={`${index}-${instruction.token}`} style={{ paddingLeft: `${12 + instruction.depth * 18}px` }}>
-        <span className="asm-index">{String(index + 1).padStart(2, "0")}</span>
-        <span className={`asm-meaning is-${instruction.kind}`}>{instruction.meaning}</span>
-        <code className={`asm-token is-${instruction.kind}`}>{instruction.token}</code>
-      </li>)}</ol>
-    </div>
-    <small className="asm-note">Formatted for reading. COPY preserves the exact raw compiler output.</small>
-  </>;
+  tokens.forEach((token, index) => {
+    if (control.has(token)) {
+      flush();
+      if (token === "OP_ELSE" || token === "OP_ENDIF") depth = Math.max(0, depth - 1);
+      lines.push(`${"    ".repeat(depth)}${token}`);
+      if (token === "OP_IF" || token === "OP_NOTIF" || token === "OP_ELSE") depth += 1;
+      return;
+    }
+
+    current.push(token);
+    const next = tokens[index + 1];
+    const continuesLocktime = token === "OP_CHECKLOCKTIMEVERIFY" && (next === "OP_VERIFY" || next === "OP_DROP" || next === "OP_0NOTEQUAL");
+    if (!continuesLocktime && (lineEnd.has(token) || control.has(next))) flush();
+  });
+  flush();
+  return lines.join("\n");
 }
 
 export default function Home() {
@@ -363,11 +312,8 @@ export default function Home() {
 
   const rowById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
   const fieldState = useMemo(() => validateRows(rows), [rows]);
-  const keyLabels = useMemo(() => new Map(rows.flatMap((row) => {
-    try { return [[validateReadOncePublicKey(row.publicKey), row.label.trim() || "unnamed"] as const]; }
-    catch { return []; }
-  })), [rows]);
   const live = useMemo(() => compileTree(rows, branches, network), [rows, branches, network]);
+  const formattedAsm = useMemo(() => live.compiled ? formatBitcoinScript(live.compiled.asm) : "", [live.compiled]);
   const activeBranches = branches.filter(branchStarted);
   const usedByBranch = useMemo(() => new Set(branches.flatMap((branch) => branch.keyRowIds)), [branches]);
   const hasDemoKey = useMemo(() => rows.some((row) =>
@@ -629,7 +575,7 @@ export default function Home() {
 
           {live.compiled ? <div className="artifact-stack">
             <section className="artifact-block"><header><h3>MINISCRIPT</h3><span></span><CopyButton value={live.compiled.miniscript} label="Miniscript" /></header><pre><code>{live.compiled.miniscript}</code></pre></section>
-            <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3><span>{live.compiled.witness_script_bytes} / 3600 bytes · {opcodeCount} opcodes</span><CopyButton value={live.compiled.asm} label="Bitcoin Script ASM" /></header><BitcoinScriptView asm={live.compiled.asm} keyLabels={keyLabels} /></section>
+            <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3><span>{live.compiled.witness_script_bytes} / 3600 bytes · {opcodeCount} opcodes</span><CopyButton value={formattedAsm} label="Bitcoin Script ASM" /></header><pre className="asm-code" aria-label="Formatted Bitcoin Script"><code>{formattedAsm}</code></pre></section>
             <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS · OUTPUT ARTIFACT</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
               const value = event.currentTarget.value;
               if (isUiNetwork(value)) setNetwork(value);

@@ -77,12 +77,9 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   assert.match(page, /P2WSH ADDRESS · OUTPUT ARTIFACT/);
   assert.match(page, /Bitcoin Core funding command belongs to the next workflow step/);
   assert.match(page, /BITCOIN SCRIPT · ASM/);
-  assert.match(page, /Formatted Bitcoin Script instructions/);
-  assert.match(page, /STEP/);
-  assert.match(page, /MEANING/);
-  assert.match(page, /CHECK LOCKTIME/);
-  assert.match(page, /COPY preserves the exact raw compiler output/);
-  assert.match(page, /formatAsm/);
+  assert.match(page, /Formatted Bitcoin Script/);
+  assert.match(page, /formatBitcoinScript/);
+  assert.doesNotMatch(page, /asmMeaning|decodeScriptNumber/);
   assert.match(page, /DEMO KEYS · DO NOT FUND/);
   assert.match(page, /Address copy and JSON export are blocked/);
   assert.match(page, /disabled=\{addressAndExportBlocked\}/);
