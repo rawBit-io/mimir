@@ -1,6 +1,6 @@
 # Mimir
 
-Mimir is a one-page, offline, terminal-style builder for Bitcoin recovery
+Mimir is a one-page, offline specification-sheet builder for Bitcoin recovery
 policies. Register up to five compressed public keys, then describe up to five
 alternative spending paths by choosing signers, a `K-of-N` threshold, and an
 optional absolute UTC date. The exact native P2WSH Miniscript, Bitcoin Script
@@ -47,7 +47,7 @@ Miniscript, requires top-level and sublevel sanity, and verifies that each
 emitted public key occurs once. This is a strong compiler guard, not a
 substitute for independent Bitcoin tooling and a recovery rehearsal.
 
-Key labels are descriptive only. The blocks, selected signers, threshold, and
+Key labels are descriptive only. The selected signers, threshold, and
 date define spending. Dates are absolute calendar dates at `00:00:00 UTC`, not
 relative durations from funding.
 
@@ -55,9 +55,9 @@ The current implementation provides:
 
 - up to five valid compressed secp256k1 public keys;
 - up to five alternative visual paths;
-- a terminal policy canvas that builds one alternative spending path at a time;
-- click, keyboard, touch, and native drag/drop placement for keys, multisig, and
-  timelock controls;
+- a compact paper-style keyholder and spending-clause editor;
+- direct click, keyboard, and touch controls for clause membership, signature
+  threshold, and effective date;
 - implicit policy logic: each added path is an alternative, while a timelock is
   automatically required by the path containing it;
 - inline `K-of-N` and UTC-date configuration inside each branch;

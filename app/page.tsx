@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MAX_READ_ONCE_KEYS,
   MAX_READ_ONCE_PATHS,
@@ -29,9 +29,7 @@ type FieldState = {
   normalizedPublicKey: string | null;
 };
 type LiveResult = { compiled: CompiledReadOncePolicy | null; message: string | null };
-type PaletteBlock = "multisig" | "timelock";
 
-const DRAG_MIME = "application/x-mimir-policy-block";
 const DEMO_PUBLIC_KEYS = [
   "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
   "02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
@@ -67,13 +65,7 @@ function futureYearDates(count: number): string[] {
 }
 
 function makeBranch(id: string): PolicyBranch {
-  return {
-    id,
-    signingMode: null,
-    keyRowIds: [],
-    threshold: 1,
-    unlockDate: null,
-  };
+  return { id, signingMode: null, keyRowIds: [], threshold: 1, unlockDate: null };
 }
 
 function initialRows(): KeyRow[] {
@@ -107,11 +99,6 @@ function isUiNetwork(value: string): value is UiNetwork {
   return value === "bitcoin" || value === "testnet" || value === "signet" || value === "regtest";
 }
 
-function shortKey(value: string): string {
-  const normalized = value.trim();
-  return normalized.length < 18 ? normalized : `${normalized.slice(0, 10)}…${normalized.slice(-6)}`;
-}
-
 function cluster4(value: string): string {
   return value.match(/.{1,4}/g)?.join(" ") ?? value;
 }
@@ -129,8 +116,17 @@ function readableDate(value: string | null): string {
   return `${Number(day)} ${months[Number(month) - 1]} ${year} 00:00 UTC`;
 }
 
+function naturalList(values: string[]): string {
+  if (values.length < 2) return values[0] ?? "an unnamed keyholder";
+  return `${values.slice(0, -1).join(", ")} and ${values.at(-1)}`;
+}
+
 function branchStarted(branch: PolicyBranch): boolean {
   return branch.signingMode !== null || branch.unlockDate !== null;
+}
+
+function branchComplete(branch: PolicyBranch): boolean {
+  return branch.signingMode !== null && branch.keyRowIds.length > 0;
 }
 
 function validateRows(rows: KeyRow[]): Map<string, FieldState> {
@@ -155,27 +151,27 @@ function validateRows(rows: KeyRow[]): Map<string, FieldState> {
         : /\p{Cc}/u.test(label) ? "remove control characters"
           : (labelCounts.get(label.toLocaleLowerCase("en-US")) ?? 0) > 1 ? "label must be unique" : null;
     const publicKeyError = !publicKey
-      ? row.publicKey.trim() ? "invalid compressed secp256k1 public key" : "enter a compressed public key"
+      ? row.publicKey.trim() ? "not a compressed secp256k1 point" : "awaiting public key"
       : (publicKeyCounts.get(publicKey) ?? 0) > 1 ? "public key already registered" : null;
     return [row.id, { labelError, publicKeyError, normalizedPublicKey: publicKey }];
   }));
 }
 
-function compileTree(
-  rows: KeyRow[],
-  branches: PolicyBranch[],
-  network: UiNetwork,
-): LiveResult {
+function compileTree(rows: KeyRow[], branches: PolicyBranch[], network: UiNetwork): LiveResult {
   const active = branches.filter(branchStarted);
   if (active.length === 0) return { compiled: null, message: null };
+  const emptyClauseIndex = branches.findIndex((branch) => !branchStarted(branch));
+  if (emptyClauseIndex >= 0) {
+    return { compiled: null, message: `clause 2.${emptyClauseIndex + 1} needs at least one keyholder` };
+  }
   try {
     const rowById = new Map(rows.map((row) => [row.id, row]));
     active.forEach((branch, index) => {
       if (!branch.signingMode || branch.keyRowIds.length === 0) {
-        throw new Error(`path P${String(index + 1).padStart(2, "0")} needs a key or multisig block`);
+        throw new Error(`clause 2.${index + 1} needs at least one keyholder`);
       }
       if (branch.threshold < 1 || branch.threshold > branch.keyRowIds.length) {
-        throw new Error(`path P${String(index + 1).padStart(2, "0")} has an invalid signature threshold`);
+        throw new Error(`clause 2.${index + 1} has an invalid signature threshold`);
       }
       if (branch.unlockDate) unixFromReadOnceDate(branch.unlockDate);
     });
@@ -183,23 +179,20 @@ function compileTree(
     const usedIds = [...new Set(active.flatMap((branch) => branch.keyRowIds))];
     for (const id of usedIds) {
       const row = rowById.get(id);
-      if (!row) throw new Error("a path references a removed key");
-      if (!row.label.trim()) throw new Error("every key used by a path needs a label");
+      if (!row) throw new Error("a clause references a removed keyholder");
+      if (!row.label.trim()) throw new Error("every keyholder used by a clause needs a label");
       validateReadOncePublicKey(row.publicKey);
     }
 
     const completeRows = rows.flatMap((row) => {
       const label = row.label.trim().normalize("NFC");
       if (!label || !row.publicKey.trim()) return [];
-      try {
-        return [{ row, label, publicKey: validateReadOncePublicKey(row.publicKey) }];
-      } catch {
-        return [];
-      }
+      try { return [{ row, label, publicKey: validateReadOncePublicKey(row.publicKey) }]; }
+      catch { return []; }
     }).sort((left, right) =>
       left.publicKey.localeCompare(right.publicKey) || left.label.localeCompare(right.label));
     if (new Set(completeRows.map((entry) => entry.label.toLocaleLowerCase("en-US"))).size !== completeRows.length) {
-      throw new Error("registered key labels must be unique");
+      throw new Error("registered keyholder labels must be unique");
     }
     if (new Set(completeRows.map((entry) => entry.publicKey)).size !== completeRows.length) {
       throw new Error("each public key may be registered only once");
@@ -220,7 +213,7 @@ function compileTree(
       paths: active.map((branch) => ({
         key_ids: branch.keyRowIds.map((rowId) => {
           const id = requestIdByRowId.get(rowId);
-          if (!id) throw new Error("complete every key used in the policy tree");
+          if (!id) throw new Error("complete every keyholder used in a clause");
           return id;
         }),
         threshold: branch.keyRowIds.length === 1 ? 1 : branch.threshold,
@@ -229,22 +222,20 @@ function compileTree(
     };
     return { compiled: compileReadOncePolicy(request), message: null };
   } catch (error) {
-    return {
-      compiled: null,
-      message: error instanceof Error ? error.message : "the policy tree could not be compiled",
-    };
+    return { compiled: null, message: error instanceof Error ? error.message : "the policy could not be compiled" };
   }
 }
 
-function CopyButton({ value, label }: { value: string; label: string }) {
+function CopyButton({ value, label, disabled = false }: { value: string; label: string; disabled?: boolean }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   async function copy() {
+    if (disabled) return;
     try { await navigator.clipboard.writeText(value); setState("copied"); }
     catch { setState("failed"); }
     window.setTimeout(() => setState("idle"), 1_500);
   }
   return <>
-    <button className="copy" type="button" onClick={copy} aria-label={`copy ${label}`}>
+    <button className="copy-button" type="button" onClick={copy} disabled={disabled} aria-label={`copy ${label}`}>
       {state === "copied" ? "COPIED" : state === "failed" ? "FAILED" : "COPY"}
     </button>
     <span className="sr-only" role="status" aria-live="polite">
@@ -263,7 +254,6 @@ function TechnicalItem({ label, value, clustered }: { label: string; value: stri
 export default function Home() {
   const [rows, setRows] = useState<KeyRow[]>(initialRows);
   const [branches, setBranches] = useState<PolicyBranch[]>([makeBranch("branch-1")]);
-  const [activeBranchId, setActiveBranchId] = useState("branch-1");
   const [network, setNetwork] = useState<UiNetwork>("regtest");
   const [futureMinimum, setFutureMinimum] = useState(firstFutureDate);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -287,7 +277,6 @@ export default function Home() {
   const rowById = useMemo(() => new Map(rows.map((row) => [row.id, row])), [rows]);
   const fieldState = useMemo(() => validateRows(rows), [rows]);
   const live = useMemo(() => compileTree(rows, branches, network), [rows, branches, network]);
-  const activeBranch = branches.find((branch) => branch.id === activeBranchId) ?? branches[0];
   const activeBranches = branches.filter(branchStarted);
   const usedByBranch = useMemo(() => new Set(branches.flatMap((branch) => branch.keyRowIds)), [branches]);
   const hasDemoKey = useMemo(() => rows.some((row) =>
@@ -306,7 +295,7 @@ export default function Home() {
 
   function updateBranch(id: string, transform: (branch: PolicyBranch) => PolicyBranch) {
     setBranches((current) => current.map((branch) => branch.id === id ? transform(branch) : branch));
-    setActiveBranchId(id);
+    setFeedback(null);
   }
 
   function addKeyRow() {
@@ -314,127 +303,72 @@ export default function Home() {
     const id = `key-row-${nextKeyId.current}`;
     nextKeyId.current += 1;
     setRows((current) => [...current, { id, label: "", publicKey: "" }]);
-    setFeedback(`key ${rows.length + 1} added to the registry`);
+    setFeedback(`keyholder ${rows.length + 1} added`);
   }
 
   function removeKeyRow(id: string) {
     if (usedByBranch.has(id)) {
-      setFeedback("key is used in the policy tree — remove it from those paths first");
+      setFeedback("keyholder is used by a clause — remove it from that clause first");
       return;
     }
     if (rows.length === 1) return;
     setRows((current) => current.filter((row) => row.id !== id));
-    setFeedback("key removed from the registry");
+    setFeedback("keyholder removed");
   }
 
   function addSpendingPath() {
-    const untouched = branches.find((branch) => !branchStarted(branch));
-    if (untouched) {
-      setActiveBranchId(untouched.id);
-      setFeedback("empty spending path selected");
+    if (branches.some((branch) => !branchComplete(branch))) {
+      setFeedback("complete the current clause before adding another");
       return;
     }
-    if (branches.length >= MAX_READ_ONCE_PATHS) {
-      setFeedback("five spending paths is the limit");
-      return;
-    }
+    if (branches.length >= MAX_READ_ONCE_PATHS) return;
     const id = `branch-${nextBranchId.current}`;
     nextBranchId.current += 1;
     setBranches((current) => [...current, makeBranch(id)]);
-    setActiveBranchId(id);
-    setFeedback("spending path added — choose a key or multisig block");
+    setFeedback("new spending clause added");
   }
 
   function removeBranch(id: string) {
     if (branches.length === 1) {
       setBranches([makeBranch("branch-1")]);
-      setActiveBranchId("branch-1");
-      setFeedback("branch cleared");
+      setFeedback("clause cleared");
       return;
     }
-    const remaining = branches.filter((branch) => branch.id !== id);
-    setBranches(remaining);
-    if (activeBranchId === id) setActiveBranchId(remaining[0].id);
-    setFeedback("branch removed — policy recompiled");
+    setBranches((current) => current.filter((branch) => branch.id !== id));
+    setFeedback("clause removed — artifacts recompiled");
   }
 
-  function addKeyToBranch(rowId: string, branchId = activeBranch.id) {
+  function toggleKeyInBranch(branchId: string, rowId: string) {
     const state = fieldState.get(rowId);
     if (!state || state.labelError || state.publicKeyError) {
-      setFeedback("complete and verify that public key before using it");
+      setFeedback("complete and verify that keyholder before using it");
       return;
     }
     updateBranch(branchId, (branch) => {
-      if (branch.keyRowIds.includes(rowId)) return branch;
-      if (branch.keyRowIds.length >= MAX_READ_ONCE_KEYS) return branch;
-      const keyRowIds = [...branch.keyRowIds, rowId];
-      const signingMode: SigningMode = branch.signingMode === "multisig" || keyRowIds.length > 1
-        ? "multisig"
-        : "key";
-      const threshold = branch.signingMode === null
+      const selected = branch.keyRowIds.includes(rowId);
+      const keyRowIds = selected
+        ? branch.keyRowIds.filter((id) => id !== rowId)
+        : [...branch.keyRowIds, rowId];
+      const signingMode: SigningMode = keyRowIds.length === 0 ? null : keyRowIds.length === 1 ? "key" : "multisig";
+      const threshold = keyRowIds.length < 2
         ? 1
-        : branch.signingMode === "key" && keyRowIds.length === 2
+        : !selected && branch.keyRowIds.length === 1
           ? 2
           : Math.min(Math.max(1, branch.threshold), keyRowIds.length);
       return { ...branch, signingMode, keyRowIds, threshold };
     });
-    setFeedback(`${rowById.get(rowId)?.label || "key"} added to the selected path`);
-  }
-
-  function removeKeyFromBranch(branchId: string, rowId: string) {
-    updateBranch(branchId, (branch) => {
-      const keyRowIds = branch.keyRowIds.filter((id) => id !== rowId);
-      const signingMode = keyRowIds.length === 0 && branch.signingMode === "key"
-        ? null
-        : branch.signingMode;
-      return {
-        ...branch,
-        signingMode,
-        keyRowIds,
-        threshold: Math.min(Math.max(1, branch.threshold), Math.max(1, keyRowIds.length)),
-      };
-    });
-  }
-
-  function applyBlock(block: PaletteBlock, branchId = activeBranch.id) {
-    if (block === "timelock") {
-      updateBranch(branchId, (branch) => branch.unlockDate
-        ? branch
-        : { ...branch, unlockDate: defaultUnlockDate() });
-      setFeedback("timelock added at 00:00 UTC — adjust the date in the branch");
-      return;
-    }
-    updateBranch(branchId, (branch) => branch.signingMode
-      ? branch
-      : { ...branch, signingMode: "multisig", keyRowIds: [], threshold: 1 });
-    setFeedback("multisig block added — add keys and choose K");
-  }
-
-  function startDrag(event: DragEvent<HTMLElement>, payload: string) {
-    event.dataTransfer.effectAllowed = "copy";
-    event.dataTransfer.setData(DRAG_MIME, payload);
-  }
-
-  function dropIntoBranch(event: DragEvent<HTMLElement>, branchId: string) {
-    event.preventDefault();
-    setActiveBranchId(branchId);
-    const payload = event.dataTransfer.getData(DRAG_MIME);
-    if (payload.startsWith("key:")) addKeyToBranch(payload.slice(4), branchId);
-    else if (["multisig", "timelock"].includes(payload)) {
-      applyBlock(payload as PaletteBlock, branchId);
-    }
   }
 
   function setThreshold(branchId: string, threshold: number) {
     updateBranch(branchId, (branch) => ({ ...branch, threshold }));
   }
 
-  function removeSigning(branchId: string) {
-    updateBranch(branchId, (branch) => ({ ...branch, signingMode: null, keyRowIds: [], threshold: 1 }));
+  function setImmediate(branchId: string) {
+    updateBranch(branchId, (branch) => ({ ...branch, unlockDate: null }));
   }
 
-  function removeTimelock(branchId: string) {
-    updateBranch(branchId, (branch) => ({ ...branch, unlockDate: null }));
+  function setDelayed(branchId: string) {
+    updateBranch(branchId, (branch) => ({ ...branch, unlockDate: branch.unlockDate ?? defaultUnlockDate() }));
   }
 
   function arm(kind: "demo" | "reset") {
@@ -452,11 +386,10 @@ export default function Home() {
   function loadDemo() {
     setRows(demoRows());
     setBranches(demoBranches());
-    setActiveBranchId("branch-1");
     setNetwork("regtest");
     nextKeyId.current = 5;
     nextBranchId.current = 5;
-    setFeedback("demo loaded — Owner repeats visually but is emitted once after normalization");
+    setFeedback("demo loaded — public demonstration keys must never receive funds");
   }
 
   function requestDemo() {
@@ -467,12 +400,11 @@ export default function Home() {
   function reset() {
     setRows(initialRows());
     setBranches([makeBranch("branch-1")]);
-    setActiveBranchId("branch-1");
     setNetwork("regtest");
     setFutureMinimum(firstFutureDate());
     nextKeyId.current = 3;
     nextBranchId.current = 2;
-    setFeedback("session reset — nothing was persisted");
+    setFeedback("sheet reset — nothing was persisted");
   }
 
   function downloadPolicy() {
@@ -480,7 +412,7 @@ export default function Home() {
     const currentMinimum = firstFutureDate();
     if (branches.some((branch) => branch.unlockDate && branch.unlockDate < currentMinimum)) {
       setFutureMinimum(currentMinimum);
-      setFeedback("export blocked — rebuild the path whose lock date is active or past");
+      setFeedback("export blocked — replace the clause whose lock date is active or past");
       return;
     }
     const blob = new Blob([live.compiled.canonical_manifest], { type: "application/json;charset=utf-8" });
@@ -494,233 +426,148 @@ export default function Home() {
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  function branchSummary(branch: PolicyBranch): string {
-    if (!branch.signingMode || branch.keyRowIds.length === 0) return "incomplete — add key or multisig";
-    const names = branch.keyRowIds.map((id) => rowById.get(id)?.label.trim() || "unnamed");
-    const signing = names.length === 1 ? names[0] : `${branch.threshold}-of-${names.length} · ${names.join(", ")}`;
-    return branch.unlockDate ? `${signing} · from ${readableDate(branch.unlockDate)}` : `${signing} · immediately`;
+  function clauseSentence(branch: PolicyBranch): string {
+    const names = branch.keyRowIds.map((id) => rowById.get(id)?.label.trim() || "an unnamed keyholder");
+    if (names.length === 0) return "No keyholders are selected yet, so this clause cannot be compiled.";
+    const who = names.length === 1 ? names[0] : `any ${branch.threshold} of ${naturalList(names)}`;
+    if (!branch.unlockDate) return `${who.charAt(0).toUpperCase()}${who.slice(1)} may spend at any time.`;
+    return `From ${readableDate(branch.unlockDate)} onward, ${who} may spend.`;
   }
 
-  const stdoutState = live.compiled
-    ? hasDemoKey && hasNonFutureDelay ? "DO-NOT-FUND · REVIEW DATE"
-      : hasDemoKey ? "DO-NOT-FUND"
-        : hasNonFutureDelay ? "REVIEW DATE" : "COMPILED"
-    : activeBranches.length ? "NOT COMPILED" : "AWAITING POLICY";
+  const statusLabel = live.compiled
+    ? addressAndExportBlocked ? "REVIEW" : "COMPILES"
+    : live.message ? "UNRESOLVED" : "INCOMPLETE";
   const statusTone = live.compiled
-    ? addressAndExportBlocked ? "amber" : "green"
-    : activeBranches.length ? "red" : "dim";
-  const multisigDisabled = Boolean(activeBranch.signingMode);
-  const timelockDisabled = Boolean(activeBranch.unlockDate);
-  const pathLimitReached = branches.length >= MAX_READ_ONCE_PATHS && branches.every(branchStarted);
+    ? addressAndExportBlocked ? "warning" : "valid"
+    : live.message ? "error" : "draft";
+  const revision = live.compiled ? live.compiled.policy_manifest_sha256.slice(0, 12) : "not issued";
+  const canAddClause = branches.length < MAX_READ_ONCE_PATHS && branches.every(branchComplete);
 
   return (
-    <main className="terminal-shell">
-      <header className="topbar">
-        <div className="brand"><strong>MIMIR</strong><span>v6 · PREVIEW</span><span>template {TEMPLATE_ID_READ_ONCE}</span></div>
-        <div className="top-actions">
-          <button className="plain-button" type="button" onClick={requestDemo} onBlur={() => setArmed(null)}>
-            {armed === "demo" ? "REALLY LOAD?" : "DEMO"}
-          </button>
-          <button className="plain-button" type="button" onClick={() => arm("reset")} onBlur={() => setArmed(null)}>
-            {armed === "reset" ? "REALLY RESET?" : "RESET"}
-          </button>
-        </div>
-      </header>
+    <main className="sheet-shell">
+      <article className="spec-sheet">
+        <header className="sheet-header">
+          <div className="sheet-titlebar">
+            <strong>MIMIR</strong>
+            <span>BITCOIN SPENDING POLICY · SPECIFICATION SHEET</span>
+            <b>SHEET 1 OF 1</b>
+          </div>
+          <div className="sheet-meta">
+            <div><span>REVISION</span><strong>{revision}</strong></div>
+            <div><span>TEMPLATE</span><strong>read-once paths v1</strong></div>
+            <div><span>STATUS</span><strong className={`status-stamp is-${statusTone}`}><i></i>{statusLabel}</strong></div>
+            <div className="sheet-actions"><span>SESSION</span><p>
+              <button type="button" onClick={requestDemo} onBlur={() => setArmed(null)}>{armed === "demo" ? "REALLY LOAD?" : "DEMO"}</button>
+              <button type="button" onClick={() => arm("reset")} onBlur={() => setArmed(null)}>{armed === "reset" ? "REALLY RESET?" : "RESET"}</button>
+            </p></div>
+          </div>
+        </header>
 
-      <div className="page-wrap">
-        <section className="hero" aria-labelledby="hero-title">
-          <p className="prompt">$ mimir compose</p>
-          <h1 id="hero-title">Declare your keys. Compose the<br />policy. Watch the script compile.</h1>
-          <p className="hero-facts"><span>public keys only</span><span>compiles on every change</span><span>no network calls</span><span>nothing persisted</span></p>
-        </section>
+        {hasDemoKey ? <div className="sheet-alert is-warning" role="alert"><strong>DEMO KEYS · DO NOT FUND</strong><span>These private keys are public knowledge. Address copy and JSON export are blocked.</span></div> : null}
+        {hasNonFutureDelay ? <div className="sheet-alert is-error" role="alert"><strong>LOCK DATE REQUIRES REVIEW</strong><span>A clause is already active or past. Exact artifacts remain visible; address copy and export are blocked.</span></div> : null}
 
-        {hasDemoKey ? <div className="alert demo-alert" role="alert"><strong>DEMO KEYS — DO NOT FUND</strong><span>private keys are public knowledge; address copy and export are blocked.</span></div> : null}
-        {hasNonFutureDelay ? <div className="alert review-alert" role="alert"><strong>REVIEW DATE</strong><span>a lock is active or past; exact script remains visible, but address copy and export are blocked.</span></div> : null}
-
-        <section className="terminal-section keys-section" aria-labelledby="keys-heading">
-          <header className="section-heading"><span>01</span><h2 id="keys-heading">KEYS</h2><p>a label and a compressed public key — nothing else</p><i></i><b>{rows.length}/{MAX_READ_ONCE_KEYS}</b></header>
-          <div className="key-columns" aria-hidden="true"><span></span><span>LABEL</span><span>COMPRESSED PUBLIC KEY · secp256k1</span><span></span></div>
-          <div className="key-registry">{rows.map((row, index) => {
+        <section className="sheet-section keyholder-section" aria-labelledby="keyholders-heading">
+          <header className="section-title"><span>§1</span><h2 id="keyholders-heading">KEYHOLDERS</h2><p>compressed public keys, entered by hand</p><i></i><b>{rows.length} of {MAX_READ_ONCE_KEYS}</b></header>
+          <div className="key-table-head" aria-hidden="true"><span>NO</span><span>LABEL</span><span>PUBLIC KEY · secp256k1</span><span>STATE</span><span></span></div>
+          <div className="key-table">{rows.map((row, index) => {
             const state = fieldState.get(row.id);
             const usedCount = branches.filter((branch) => branch.keyRowIds.includes(row.id)).length;
-            const keyVerified = Boolean(state?.normalizedPublicKey && !state.publicKeyError);
-            return <article className="registry-row" key={row.id}>
-              <span className="row-number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-              <label><span className="sr-only">key {index + 1} label</span><input value={row.label}
-                onChange={(event) => updateRow(row.id, { label: event.target.value })} placeholder="Signer label"
+            const verified = Boolean(state?.normalizedPublicKey && !state.publicKeyError && !state.labelError);
+            const hasInputError = Boolean(row.publicKey.trim() && state?.publicKeyError);
+            return <div className="keyholder-row" key={row.id}>
+              <span className="row-index">{String(index + 1).padStart(2, "0")}</span>
+              <label><span className="sr-only">keyholder {index + 1} label</span><input value={row.label}
+                onChange={(event) => updateRow(row.id, { label: event.target.value })} placeholder="label"
                 maxLength={80} autoComplete="off" aria-invalid={Boolean(state?.labelError)} /></label>
-              <label><span className="sr-only">key {index + 1} compressed public key</span><input value={row.publicKey}
-                onChange={(event) => updateRow(row.id, { publicKey: event.target.value })}
+              <label><span className="sr-only">keyholder {index + 1} compressed public key</span><input value={row.publicKey}
+                onChange={(event) => updateRow(row.id, { publicKey: event.target.value.replace(/\s+/g, "") })}
                 placeholder="02… or 03… + 64 hex" autoComplete="off" autoCapitalize="none" spellCheck={false}
                 aria-invalid={Boolean(state?.publicKeyError)} /></label>
-              <button className="icon-remove" type="button" onClick={() => removeKeyRow(row.id)}
-                aria-label={`remove ${row.label.trim() || `key ${index + 1}`}`} aria-disabled={usedByBranch.has(row.id)}>×</button>
-              <p className={`key-status${keyVerified ? " is-valid" : state?.publicKeyError && row.publicKey.trim() ? " is-error" : ""}`}>
-                {keyVerified ? "secp256k1 point verified" : state?.publicKeyError ?? "awaiting key"}
-                <span>{usedCount ? `used in ${usedCount} ${usedCount === 1 ? "path" : "paths"}` : "unused"}</span>
+              <p className={verified ? "is-valid" : hasInputError ? "is-error" : ""}>
+                {verified ? `verified · ${usedCount ? `${usedCount} ${usedCount === 1 ? "clause" : "clauses"}` : "unused"}` : state?.publicKeyError ?? "awaiting entry"}
               </p>
-            </article>;
+              <button type="button" className="remove-button" onClick={() => removeKeyRow(row.id)}
+                aria-label={`remove ${row.label.trim() || `keyholder ${index + 1}`}`} aria-disabled={usedByBranch.has(row.id)}>×</button>
+            </div>;
           })}</div>
-          <button className="add-key" type="button" onClick={addKeyRow} disabled={rows.length >= MAX_READ_ONCE_KEYS}>+ {rows.length >= MAX_READ_ONCE_KEYS ? "KEY LIMIT REACHED" : "ADD KEY"}</button>
+          <button className="outline-action" type="button" onClick={addKeyRow} disabled={rows.length >= MAX_READ_ONCE_KEYS}>+ {rows.length >= MAX_READ_ONCE_KEYS ? "KEYHOLDER LIMIT REACHED" : "ADD KEYHOLDER"}</button>
         </section>
 
-        <div className="composer-grid">
-          <div className="policy-column">
-            <section className="terminal-section policy-section" aria-labelledby="policy-heading">
-              <header className="section-heading"><span>02</span><h2 id="policy-heading">POLICY</h2><p>build one spending path at a time</p><i></i><b>{activeBranches.length}/{MAX_READ_ONCE_PATHS}</b></header>
-
-              <div className="palette" aria-label="policy blocks">
-                <p className="palette-label">PATH RULES · click or drag into the selected path</p>
-                <div className="block-palette">
-                  {([
-                    ["multisig", "MULTISIG", "k-of-n keys", multisigDisabled],
-                    ["timelock", "TIMELOCK", "not before date", timelockDisabled],
-                  ] as const).map(([kind, title, subtitle, disabled]) => <button key={kind} type="button"
-                    className={`palette-block block-${kind}`} disabled={disabled} draggable={!disabled}
-                    onDragStart={(event) => startDrag(event, kind)} onClick={() => applyBlock(kind)}>
-                    <strong>{title}</strong><span>{subtitle}</span>
-                  </button>)}
-                </div>
-                <div className="palette-divider"></div>
-                <p className="palette-label">KEYS · reusable in every path</p>
-                <div className="key-palette">{rows.map((row) => {
+        <section className="sheet-section clauses-section" aria-labelledby="clauses-heading">
+          <header className="section-title"><span>§2</span><h2 id="clauses-heading">SPENDING CLAUSES</h2><p>any single complete clause is sufficient to spend</p><i></i><b>{branches.length} of {MAX_READ_ONCE_PATHS}</b></header>
+          <div className="clause-list">{branches.map((branch, index) => {
+            const locked = Boolean(branch.unlockDate);
+            return <article className={`clause${locked ? " is-delayed" : ""}`} key={branch.id}>
+              <header><span>2.{index + 1}</span><p>{clauseSentence(branch)}</p><button type="button" className="remove-button" onClick={() => removeBranch(branch.id)} aria-label={`remove clause ${index + 1}`}>×</button></header>
+              <div className="clause-controls">
+                <fieldset className="keyholder-picker"><legend>KEYHOLDERS IN THIS CLAUSE</legend><div>{rows.map((row, rowIndex) => {
                   const state = fieldState.get(row.id);
+                  const selected = branch.keyRowIds.includes(row.id);
                   const invalid = Boolean(state?.labelError || state?.publicKeyError);
-                  const selected = activeBranch.keyRowIds.includes(row.id);
-                  return <button key={row.id} type="button" disabled={invalid || selected}
-                    className={`key-block${selected ? " is-used-here" : ""}`} draggable={!invalid && !selected}
-                    onDragStart={(event) => startDrag(event, `key:${row.id}`)} onClick={() => addKeyToBranch(row.id)}>
-                    <strong>{row.label.trim() || "Unnamed"}</strong><code>{state?.normalizedPublicKey ? shortKey(state.normalizedPublicKey) : "complete key first"}</code>
+                  return <button type="button" key={row.id} className={selected ? "is-selected" : ""}
+                    onClick={() => toggleKeyInBranch(branch.id, row.id)} disabled={invalid}
+                    aria-pressed={selected} title={selected ? "remove from this clause" : "add to this clause"}>
+                    {row.label.trim() || `keyholder ${rowIndex + 1}`}
                   </button>;
-                })}</div>
+                })}</div></fieldset>
+                <fieldset className="signature-picker"><legend>SIGNATURES</legend><div>{branch.keyRowIds.length
+                  ? branch.keyRowIds.map((_, thresholdIndex) => {
+                    const value = thresholdIndex + 1;
+                    return <button type="button" key={value} className={branch.threshold === value ? "is-selected" : ""}
+                      onClick={() => setThreshold(branch.id, value)} aria-pressed={branch.threshold === value}>{value}</button>;
+                  })
+                  : <span>—</span>}</div></fieldset>
+                <fieldset className="effective-picker"><legend>EFFECTIVE</legend><div className="effective-row">
+                  <span className="segmented-control"><button type="button" className={!locked ? "is-selected" : ""} onClick={() => setImmediate(branch.id)} aria-pressed={!locked}>AT ONCE</button><button type="button" className={locked ? "is-selected" : ""} onClick={() => setDelayed(branch.id)} aria-pressed={locked}>FROM DATE</button></span>
+                  {branch.unlockDate ? <label><span className="sr-only">clause {index + 1} unlock date</span><input type="date"
+                    value={branch.unlockDate} min={futureMinimum} max="2038-01-19"
+                    onChange={(event) => updateBranch(branch.id, (current) => ({ ...current, unlockDate: event.target.value }))} /></label> : null}
+                </div></fieldset>
               </div>
+            </article>;
+          })}</div>
+          {canAddClause ? <button className="outline-action" type="button" onClick={addSpendingPath}>+ ADD CLAUSE</button> : null}
+          <p className="activity-line" role="status" aria-live="polite">{feedback ?? "Each clause is an alternative. Timelocks apply automatically to their clause."}</p>
+        </section>
 
-              <div className="policy-tree">
-                <div className="branches">{branches.map((branch, index) => {
-                  const isActive = branch.id === activeBranch.id;
-                  const branchLetter = String.fromCharCode(65 + index);
-                  return <article key={branch.id} className={`policy-branch${isActive ? " is-active" : ""}`}
-                    onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }}
-                    onDrop={(event) => dropIntoBranch(event, branch.id)}>
-                    <header className="branch-heading">
-                      <button type="button" className="branch-select" onClick={() => setActiveBranchId(branch.id)}
-                        aria-pressed={isActive}><span>{branchLetter}</span><b>{isActive ? "SELECTED PATH" : "SELECT PATH"}</b></button>
-                      <button type="button" className="icon-remove" onClick={() => removeBranch(branch.id)} aria-label={`remove path ${index + 1}`}>×</button>
-                    </header>
+        <section className="sheet-section artifacts-section" aria-labelledby="artifacts-heading">
+          <header className="section-title"><span>§3</span><h2 id="artifacts-heading">COMPILED ARTIFACTS</h2><p>{live.compiled ? "deterministic for the clauses above" : "issued when every visible clause is complete"}</p><i></i></header>
 
-                    {branch.unlockDate ? <div className="tree-row timelock-node">
-                      <span className="tree-connector">{branch.signingMode ? "WHEN" : branchLetter}</span>
-                      <div className="node-title"><strong>TIMELOCK</strong><span>dormant until {readableDate(branch.unlockDate)}</span></div>
-                      <label className="date-control"><span className="sr-only">path {index + 1} unlock date</span><input type="date"
-                        value={branch.unlockDate} min={futureMinimum} max="2038-01-19"
-                        onChange={(event) => updateBranch(branch.id, (current) => ({ ...current, unlockDate: event.target.value }))} /></label>
-                      <button type="button" className="node-remove" onClick={() => removeTimelock(branch.id)} aria-label={`remove timelock from path ${index + 1}`}>×</button>
-                    </div> : null}
+          {live.message ? <div className="error-sheet" role="alert"><strong>1 UNRESOLVED ITEM · NO ARTIFACTS ISSUED</strong><p>— {live.message}</p></div> : null}
+          {!live.compiled && !live.message ? <div className="awaiting-sheet"><strong>AWAITING A COMPLETE CLAUSE</strong><span>Select verified keyholders in §2 to compile the policy.</span></div> : null}
 
-                    {branch.unlockDate && branch.signingMode ? <div className="then-row"><span>THEN</span></div> : null}
+          {live.compiled ? <div className="artifact-stack">
+            <section className="artifact-block"><header><h3>MINISCRIPT</h3><span></span><CopyButton value={live.compiled.miniscript} label="Miniscript" /></header><pre><code>{live.compiled.miniscript}</code></pre></section>
+            <section className="artifact-block"><header><h3>BITCOIN SCRIPT · ASM</h3><span>{live.compiled.witness_script_bytes} / 3600 bytes · {opcodeCount} opcodes</span><CopyButton value={live.compiled.asm} label="Bitcoin Script ASM" /></header><pre><code>{live.compiled.asm}</code></pre></section>
+            <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS · OUTPUT ARTIFACT</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (isUiNetwork(value)) setNetwork(value);
+            }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><CopyButton value={live.compiled.address} label="P2WSH address" disabled={addressAndExportBlocked} /></header><p>{live.compiled.address}</p><small>The Bitcoin Core funding command belongs to the next workflow step.</small></section>
+            <section className="artifact-block"><header><h3>DESCRIPTOR</h3><span>checksummed</span><CopyButton value={live.compiled.descriptor} label="descriptor" /></header><pre><code>{live.compiled.descriptor}</code></pre></section>
+          </div> : null}
+        </section>
 
-                    {branch.signingMode ? <div className="tree-row signing-node">
-                      <span className="tree-connector">{branch.unlockDate ? "" : branchLetter}</span>
-                      <div className="node-title"><strong>{branch.signingMode === "multisig" ? "MULTISIG" : "KEY"}</strong>
-                        <span>{branch.keyRowIds.length > 1 ? `${branch.threshold}-of-${branch.keyRowIds.length}` : branch.keyRowIds.length ? "single signature" : "add keys"}</span></div>
-                      {branch.signingMode === "multisig" && branch.keyRowIds.length ? <div className="threshold-control" role="group" aria-label={`signatures required for path ${index + 1}`}>
-                        <span>REQUIRE</span>{branch.keyRowIds.map((_, thresholdIndex) => {
-                          const value = thresholdIndex + 1;
-                          return <button type="button" key={value} className={branch.threshold === value ? "is-active" : ""}
-                            aria-pressed={branch.threshold === value} onClick={() => setThreshold(branch.id, value)}>{value}</button>;
-                        })}
-                      </div> : null}
-                      <div className="selected-keys">{branch.keyRowIds.length
-                        ? branch.keyRowIds.map((id) => <span className="key-chip" key={id}>{rowById.get(id)?.label || "missing"}<button type="button"
-                          onClick={() => removeKeyFromBranch(branch.id, id)} aria-label={`remove ${rowById.get(id)?.label || "key"} from path ${index + 1}`}>×</button></span>)
-                        : <span className="drop-hint">drop keys here</span>}</div>
-                      <button type="button" className="node-remove" onClick={() => removeSigning(branch.id)} aria-label={`remove signing block from path ${index + 1}`}>×</button>
-                    </div> : <button type="button" className="empty-branch" onClick={() => setActiveBranchId(branch.id)}>
-                      <span>+</span><strong>DROP KEY / MULTISIG HERE</strong><small>this becomes one spending path</small>
-                    </button>}
+        <section className="sheet-section verification-section" aria-labelledby="verification-heading">
+          <header className="section-title"><span>§4</span><h2 id="verification-heading">VERIFICATION</h2><p>compiler checks for the exact issued artifacts</p><i></i></header>
+          {live.compiled ? <>
+            <div className="normalization-note"><strong>{live.compiled.manifest.normalization.authored_key_occurrences} visual key uses → {live.compiled.manifest.normalization.emitted_key_checks} read-once checks</strong><p>{live.compiled.manifest.normalization.notes.join(" ")}</p></div>
+            <div className="verification-grid">{live.compiled.invariants.map((invariant) => <div key={invariant.id}><span>{invariant.ok ? "✓" : "×"}</span><p><strong>{invariant.ok ? "passed" : "failed"}</strong>{invariant.label}</p></div>)}</div>
+            <details className="technical-details"><summary>TECHNICAL DETAILS · HEX · HASH</summary><div>
+              <TechnicalItem label="witness script · hex" value={live.compiled.witness_script_hex} />
+              <TechnicalItem label="scriptpubkey · hex" value={live.compiled.script_pubkey_hex} />
+              <TechnicalItem label="manifest · sha-256" value={live.compiled.policy_manifest_sha256} clustered />
+            </div></details>
+            <div className="notice-list"><h3>NOTICES</h3>{live.compiled.warnings.map((warning) => <p key={warning}><span>!</span>{lowerFirst(warning)}</p>)}</div>
+            <div className="export-row"><button type="button" onClick={downloadPolicy} disabled={addressAndExportBlocked}>↓ DOWNLOAD POLICY JSON</button><span>{addressAndExportBlocked ? `blocked · ${hasDemoKey ? "demo keys" : "review date"}` : `manifest sha256 ${live.compiled.policy_manifest_sha256.slice(0, 20)}…`}</span></div>
+          </> : <div className="empty-verification">Verification appears after successful compilation.</div>}
+        </section>
 
-                  </article>;
-                })}</div>
-                <button className="add-branch" type="button" onClick={addSpendingPath} disabled={pathLimitReached}>+ ADD SPENDING PATH</button>
-              </div>
-              <p className="canvas-help">Each path is an alternative way to spend. A timelock applies automatically to its path.</p>
-            </section>
-
-            <section className="terminal-section paths-section" aria-labelledby="paths-heading">
-              <header className="section-heading"><span>03</span><h2 id="paths-heading">SPENDING PATHS</h2><p>enumerated from the tree · any one can spend</p><i></i></header>
-              {activeBranches.length ? <ol className="spending-paths">{activeBranches.map((branch, index) => <li key={branch.id}>
-                <span>P{String(index + 1).padStart(2, "0")}</span><p>{branchSummary(branch)}</p>
-                <b className={branch.unlockDate ? "is-delayed" : ""}>{branch.unlockDate ? `from ${readableDate(branch.unlockDate)}` : "immediately"}</b>
-              </li>)}</ol> : <p className="empty-output">No spending paths yet. Select the empty slot and add a key or multisig block.</p>}
-            </section>
-            <p className="activity-log" role="status" aria-live="polite">{feedback ? `log ▸ ${feedback}` : ""}</p>
-          </div>
-
-          <aside className="script-column" id="live-script" aria-labelledby="script-heading">
-            <header className="script-title"><span>LIVE</span><h2 id="script-heading">BITCOIN SCRIPT</h2><i></i></header>
-            <div className={`compile-state tone-${statusTone}`}><strong>{stdoutState}</strong>
-              {live.compiled ? <span>{live.compiled.witness_script_bytes} bytes · {opcodeCount} opcodes</span> : null}<b aria-hidden="true">■</b></div>
-
-            <section className="script-panel policy-readout"><h3>VISUAL POLICY</h3>
-              {activeBranches.length ? <ol>{activeBranches.map((branch, index) => <li key={branch.id}><span>P{String(index + 1).padStart(2, "0")}</span>{branchSummary(branch)}</li>)}</ol>
-                : <p className="empty-output">awaiting first path</p>}
-              {live.message ? <p className="compile-error">! {lowerFirst(live.message)}</p> : null}
-            </section>
-
-            <section className="script-panel"><h3>NORMALIZATION</h3>
-              {live.compiled ? <div className="normalization">
-                <p><strong>{live.compiled.manifest.normalization.authored_key_occurrences}</strong> visual uses <span>▸</span> <strong>{live.compiled.manifest.normalization.emitted_key_checks}</strong> read-once checks</p>
-                <ul>{live.compiled.manifest.normalization.notes.map((note) => <li key={note}>[x] {note}</li>)}</ul>
-              </div> : <p className="empty-output">no verified read-once form</p>}
-            </section>
-
-            <section className="script-panel"><div className="panel-heading"><h3>MINISCRIPT</h3>{live.compiled ? <CopyButton value={live.compiled.miniscript} label="Miniscript" /> : null}</div>
-              {live.compiled ? <pre><code>{live.compiled.miniscript}</code></pre> : <p className="empty-output">—</p>}
-            </section>
-
-            <section className="script-panel"><div className="panel-heading"><h3>SCRIPT · ASM</h3>{live.compiled ? <><span>{live.compiled.witness_script_bytes} / 3600 B</span><CopyButton value={live.compiled.asm} label="Bitcoin Script ASM" /></> : null}</div>
-              {live.compiled ? <pre><code>{live.compiled.asm}</code></pre> : <p className="empty-output">—</p>}
-            </section>
-
-            <section className="script-panel address-panel"><div className="panel-heading"><h3>P2WSH ADDRESS · ARTIFACT</h3>
-              <label className="network-select"><span className="sr-only">Bitcoin network</span><select
-                aria-label="Bitcoin network" value={network} onChange={(event) => {
-                  const value = event.currentTarget.value;
-                  if (isUiNetwork(value)) setNetwork(value);
-                }}>
-                {NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select></label>
-              {live.compiled && !addressAndExportBlocked ? <CopyButton value={live.compiled.address} label="P2WSH address" /> : null}</div>
-              {live.compiled ? <p className="address">{live.compiled.address}</p> : <p className="empty-output">—</p>}
-              <p className="address-note">OUTPUT ARTIFACT · the Bitcoin Core funding command belongs to the next workflow step.</p>
-              {live.compiled && addressAndExportBlocked ? <p className="blocked">COPY BLOCKED · {hasDemoKey ? "DEMO KEYS" : "REVIEW DATE"}</p> : null}
-            </section>
-
-            <section className="script-panel"><div className="panel-heading"><h3>DESCRIPTOR</h3>{live.compiled ? <CopyButton value={live.compiled.descriptor} label="descriptor" /> : null}</div>
-              {live.compiled ? <pre><code>{live.compiled.descriptor}</code></pre> : <p className="empty-output">—</p>}
-            </section>
-
-            <details className="technical-details"><summary>TECHNICAL DETAILS · HEX · CHECKS</summary>
-              {live.compiled ? <div>
-                <TechnicalItem label="witness script · hex" value={live.compiled.witness_script_hex} />
-                <TechnicalItem label="scriptpubkey · hex" value={live.compiled.script_pubkey_hex} />
-                <TechnicalItem label="manifest · sha-256" value={live.compiled.policy_manifest_sha256} clustered />
-                <p className="checks">CHECKS ▸ {live.compiled.invariants.filter((invariant) => invariant.ok).length}/{live.compiled.invariants.length} PASSED</p>
-                <ul className="warnings">{live.compiled.warnings.map((warning) => <li key={warning}>! {lowerFirst(warning)}</li>)}</ul>
-                <button className="export" type="button" disabled={addressAndExportBlocked} onClick={downloadPolicy}>EXPORT POLICY.JSON</button>
-              </div> : <p className="empty-output">details appear after successful compilation</p>}
-            </details>
-          </aside>
-        </div>
-
-        <footer className="footer">
-          <p><strong>PREVIEW SOFTWARE</strong> · rehearse on Regtest or Signet and verify every artifact independently before funding.</p>
-          <p><strong>CLTV / MTP</strong> · dates are absolute UTC floors; spending requires nLockTime and a non-final nSequence.</p>
-          <p><strong>NO PRIVATE KEYS</strong> · compressed public keys only. Nothing leaves this page.</p>
+        <footer className="sheet-footer">
+          <div><span>REVIEWED BY</span><i></i></div>
+          <div><span>REHEARSED ON</span><i></i></div>
+          <p>Generated locally from public keys only. Nothing is signed, stored, or transmitted. Reproduce the descriptor with independent tooling and rehearse every clause on {network} before funding.</p>
         </footer>
-      </div>
-
-      <a className="mobile-script-link" href="#live-script">{stdoutState} <span>VIEW SCRIPT ▸</span></a>
+      </article>
     </main>
   );
 }

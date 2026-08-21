@@ -16,7 +16,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Mimir — Bitcoin Script Builder",
     description:
-      "Terminal-style offline compiler that normalizes five-key Bitcoin P2WSH policies into verified read-once Miniscript.",
+      "Offline specification-sheet compiler that normalizes five-key Bitcoin P2WSH policies into verified read-once Miniscript.",
     applicationName: "Mimir",
     robots: { index: false, follow: false, nocache: true },
     openGraph: {

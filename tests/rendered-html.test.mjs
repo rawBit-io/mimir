@@ -23,7 +23,7 @@ async function render() {
   );
 }
 
-test("server-renders the terminal session interface", async () => {
+test("server-renders the compact specification-sheet interface", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -31,28 +31,23 @@ test("server-renders the terminal session interface", async () => {
   const html = await response.text();
   assert.match(html, /<title>Mimir — Bitcoin Script Builder<\/title>/);
   assert.match(html, /<strong>MIMIR<\/strong>/);
-  assert.match(html, /v6 · PREVIEW/);
-  assert.match(html, /Declare your keys\. Compose the/);
-  assert.match(html, /Watch the script compile\./);
-  assert.match(html, />KEYS<\/h2>/);
-  assert.match(html, />POLICY<\/h2>/);
-  assert.match(html, />SPENDING PATHS<\/h2>/);
-  assert.match(html, />BITCOIN SCRIPT<\/h2>/);
-  assert.match(html, /PATH RULES · click or drag into the selected path/);
+  assert.match(html, /BITCOIN SPENDING POLICY · SPECIFICATION SHEET/);
+  assert.match(html, /SHEET 1 OF 1/);
+  assert.match(html, />KEYHOLDERS<\/h2>/);
+  assert.match(html, />SPENDING CLAUSES<\/h2>/);
+  assert.match(html, />COMPILED ARTIFACTS<\/h2>/);
+  assert.match(html, />VERIFICATION<\/h2>/);
+  assert.match(html, /compressed public keys, entered by hand/);
+  assert.match(html, /any single complete clause is sufficient to spend/);
+  assert.match(html, /KEYHOLDERS IN THIS CLAUSE/);
+  assert.match(html, />SIGNATURES<\/legend>/);
+  assert.match(html, />EFFECTIVE<\/legend>/);
+  assert.match(html, />AT ONCE<\/button>/);
+  assert.match(html, />FROM DATE<\/button>/);
   assert.doesNotMatch(html, />AND<\/strong>|>OR<\/strong>/);
-  assert.match(html, />MULTISIG<\/strong>/);
-  assert.match(html, />TIMELOCK<\/strong>/);
-  assert.match(html, /KEYS · reusable in every path/);
-  assert.match(html, /DROP KEY \/ MULTISIG HERE/);
-  assert.match(html, /\+ ADD SPENDING PATH/);
-  assert.match(html, /LIVE/);
-  assert.match(html, /TECHNICAL DETAILS · HEX · CHECKS/);
-  assert.match(html, /P2WSH ADDRESS · ARTIFACT/);
-  assert.match(html, /<option value="bitcoin">MAINNET<\/option>/);
-  assert.match(html, /<option value="testnet">TESTNET<\/option>/);
-  assert.match(html, /<option value="signet">SIGNET<\/option>/);
-  assert.match(html, /<option value="regtest" selected="">REGTEST<\/option>/);
-  assert.match(html, /Nothing leaves this page\./);
+  assert.match(html, /ADD KEYHOLDER/);
+  assert.match(html, /AWAITING A COMPLETE CLAUSE/);
+  assert.match(html, /Generated locally from public keys only/);
   assert.match(html, /http:\/\/localhost\/og-v2\.png/);
   assert.match(html, /noindex/);
   assert.match(html, /connect-src &#x27;none&#x27;/);
@@ -60,33 +55,32 @@ test("server-renders the terminal session interface", async () => {
     html,
     /COMPILE POLICY|lucide/i,
   );
-  assert.doesNotMatch(html, /KEYRING|COMPOSE PATH|pre-commit|\[ ADD PATH \]|datetime-local|fingerprint|xpub/i);
+  assert.doesNotMatch(html, /KEYRING|COMPOSE PATH|pre-commit|\[ ADD PATH \]|datetime-local|fingerprint|xpub|click or drag|DROP KEY/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
-test("source keeps the read-once normalizer, public-only input, and offline runtime behind the terminal ui", async () => {
+test("source keeps the read-once normalizer, public-only input, and offline runtime behind the sheet ui", async () => {
   const [page, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /Declare your keys\. Compose the/);
-  assert.match(page, /PATH RULES · click or drag into the selected path/);
-  assert.match(page, /KEYS · reusable in every path/);
-  assert.match(page, /DROP KEY \/ MULTISIG HERE/);
-  assert.match(page, /ADD SPENDING PATH/);
+  assert.match(page, /BITCOIN SPENDING POLICY · SPECIFICATION SHEET/);
+  assert.match(page, /KEYHOLDERS IN THIS CLAUSE/);
+  assert.match(page, /ADD KEYHOLDER/);
+  assert.match(page, /ADD CLAUSE/);
+  assert.match(page, /AT ONCE/);
+  assert.match(page, /FROM DATE/);
   assert.doesNotMatch(page, /andSlot|addOrBranch|\["and", "AND"\]|\["or", "OR"\]/);
-  assert.match(page, /SPENDING PATHS/);
-  assert.match(page, /P2WSH ADDRESS · ARTIFACT/);
+  assert.match(page, /SPENDING CLAUSES/);
+  assert.match(page, /P2WSH ADDRESS · OUTPUT ARTIFACT/);
   assert.match(page, /Bitcoin Core funding command belongs to the next workflow step/);
-  assert.match(page, /LIVE/);
-  assert.match(page, /BITCOIN SCRIPT/);
-  assert.match(page, /DEMO KEYS — DO NOT FUND/);
-  assert.match(page, /DO-NOT-FUND/);
-  assert.match(page, /address copy and export are blocked/);
+  assert.match(page, /BITCOIN SCRIPT · ASM/);
+  assert.match(page, /DEMO KEYS · DO NOT FUND/);
+  assert.match(page, /Address copy and JSON export are blocked/);
   assert.match(page, /disabled=\{addressAndExportBlocked\}/);
-  assert.match(page, /EXPORT POLICY\.JSON/);
+  assert.match(page, /DOWNLOAD POLICY JSON/);
   assert.match(page, /read-once-normalizer/);
   assert.match(page, /compileReadOncePolicy/);
   assert.match(page, /mimir-read-once-policy-request/);
@@ -94,13 +88,7 @@ test("source keeps the read-once normalizer, public-only input, and offline runt
   assert.match(page, /new Blob\(\[live\.compiled\.canonical_manifest\]/);
   assert.match(page, /MAX_READ_ONCE_KEYS/);
   assert.match(page, /MAX_READ_ONCE_PATHS/);
-  assert.match(page, /Owner repeats visually but is emitted once after normalization/);
-  assert.match(page, /DRAG_MIME/);
-  assert.match(page, /draggable=\{!disabled\}/);
-  assert.match(page, /onDragStart/);
-  assert.match(page, /onDragOver/);
-  assert.match(page, /onDrop/);
-  assert.match(page, /dataTransfer/);
+  assert.doesNotMatch(page, /DRAG_MIME|draggable=|onDragStart|onDragOver|onDrop|dataTransfer/);
   assert.match(page, /type="date"/);
   assert.match(page, /max="2038-01-19"/);
   assert.match(page, /value === "bitcoin" \|\| value === "testnet" \|\| value === "signet" \|\| value === "regtest"/);

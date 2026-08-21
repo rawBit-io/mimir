@@ -57,26 +57,20 @@ form exists, compilation fails and no address is produced.
 
 ## 3. Page workflow
 
-The single terminal-style page has four working areas:
+The single specification-sheet page has four working areas:
 
-1. `01 KEYS` accepts labels and compressed public keys.
-2. `02 POLICY` provides MULTISIG, TIMELOCK, and reusable key blocks. The user
-   selects a spending path, then clicks a block or drags it into that path. An
-   individual key creates a signing block; adding another key turns it into
-   multisig. `K` and date controls live inside the resulting block. Users do
-   not manipulate Boolean AND or OR controls.
-3. `03 SPENDING PATHS` enumerates the alternatives derived from the visual
-   tree. The root is always OR. Within one branch, its timelock and signing
-   condition are joined by AND.
-4. `LIVE BITCOIN SCRIPT` shows the authored policy, normalization counts and
-   notes, exact Miniscript, Script ASM, address, descriptor, script hex,
-   checks, warnings, and export. Network selection sits beside the address
-   artifact rather than in the page header.
+1. `§1 KEYHOLDERS` accepts labels and compressed public keys.
+2. `§2 SPENDING CLAUSES` shows one alternative clause per row. The user toggles
+   keyholder chips, selects the required signature count, and chooses `AT ONCE`
+   or `FROM DATE`. Users do not manipulate Boolean AND or OR controls.
+3. `§3 COMPILED ARTIFACTS` shows exact Miniscript, Script ASM, address, and
+   descriptor. Network selection sits beside the address artifact.
+4. `§4 VERIFICATION` shows normalization, compiler invariants, warnings,
+   technical hex and hash details, and canonical JSON export.
 
-Click, touch, and keyboard interaction provide the complete workflow; native
-drag-and-drop is an additional desktop interaction. A key stays reusable in
-every branch. MULTISIG and TIMELOCK can each occur at most once per branch.
-`ADD SPENDING PATH` adds another alternative, up to five. Internally, paths are
+Click, touch, and keyboard interaction provide the complete workflow. A key
+stays reusable in every clause. Each clause has one signature threshold and at
+most one absolute date. `ADD CLAUSE` adds another alternative, up to five. Internally, paths are
 joined by OR and a timelock is joined to its path's signing condition by AND.
 An incomplete or unsupported tree remains editable but emits no address. There
 is no separate compile or save button.
