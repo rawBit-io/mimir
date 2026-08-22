@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
+import "@fontsource/jetbrains-mono/latin-700.css";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -16,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Mimir — Bitcoin Script Builder",
     description:
-      "Offline specification-sheet compiler for a restricted, explicit five-key P2WSH Bitcoin Script template.",
+      "Offline console for a restricted, explicit five-key P2WSH Bitcoin Script policy.",
     applicationName: "Mimir",
     robots: { index: false, follow: false, nocache: true },
     openGraph: {

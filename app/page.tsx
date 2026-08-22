@@ -217,7 +217,19 @@ function compileTree(rows: KeyRow[], branches: PolicyBranch[], network: UiNetwor
   }
 }
 
-function CopyButton({ value, label, disabled = false }: { value: string; label: string; disabled?: boolean }) {
+function CopyButton({
+  value,
+  label,
+  disabled = false,
+  idleLabel = "copy",
+  className = "",
+}: {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  idleLabel?: string;
+  className?: string;
+}) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   async function copy() {
     if (disabled) return;
@@ -226,8 +238,8 @@ function CopyButton({ value, label, disabled = false }: { value: string; label: 
     window.setTimeout(() => setState("idle"), 1_500);
   }
   return <>
-    <button className="copy-button" type="button" onClick={copy} disabled={disabled} aria-label={`copy ${label}`}>
-      {state === "copied" ? "COPIED" : state === "failed" ? "FAILED" : "COPY"}
+    <button className={`copy-button${className ? ` ${className}` : ""}`} type="button" onClick={copy} disabled={disabled} aria-label={`copy ${label}`}>
+      {state === "copied" ? "copied" : state === "failed" ? "failed" : idleLabel}
     </button>
     <span className="sr-only" role="status" aria-live="polite">
       {state === "copied" ? `${label} copied.` : state === "failed" ? `${label} could not be copied.` : ""}
@@ -347,7 +359,10 @@ export default function Home() {
       setFeedback("keyholder is used by a clause — remove it from that clause first");
       return;
     }
-    if (rows.length === 1) return;
+    if (rows.length === 1) {
+      setFeedback("at least one keyholder row is required");
+      return;
+    }
     setRows((current) => current.filter((row) => row.id !== id));
     setFeedback("keyholder removed");
   }
@@ -440,7 +455,7 @@ export default function Home() {
     setFutureMinimum(firstFutureDate());
     nextKeyId.current = 3;
     nextBranchId.current = 2;
-    setFeedback("sheet reset — nothing was persisted");
+    setFeedback("workspace reset — nothing was persisted");
   }
 
   function downloadPolicy() {
@@ -471,111 +486,134 @@ export default function Home() {
   }
 
   const canAddClause = branches.length < MAX_DIRECT_SCRIPT_CLAUSES && branches.every(branchComplete);
+  const commandNetwork = network === "bitcoin" ? "mainnet" : network;
 
   return (
-    <main className="sheet-shell">
-      <article className="spec-sheet">
-        <header className="sheet-header">
-          <div className="sheet-titlebar">
-            <strong>MIMIR</strong>
-            <span>BITCOIN SPENDING POLICY</span>
-            <p className="header-actions">
-              <button type="button" onClick={requestDemo} onBlur={() => setArmed(null)}>{armed === "demo" ? "REALLY LOAD?" : "DEMO"}</button>
-              <button type="button" onClick={() => arm("reset")} onBlur={() => setArmed(null)}>{armed === "reset" ? "REALLY RESET?" : "RESET"}</button>
-            </p>
+    <main className="console-page">
+      <header className="console-commandbar">
+        <div className="command-prompt">
+          <strong>MIMIR</strong>
+          <span>mimir compile --network={commandNetwork} --clauses={branches.length}</span>
+          <i aria-hidden="true"></i>
+        </div>
+        <nav className="console-actions" aria-label="Workspace actions">
+          <button type="button" onClick={requestDemo} onBlur={() => setArmed(null)}>{armed === "demo" ? "really load?" : "demo"}</button>
+          <button type="button" onClick={() => arm("reset")} onBlur={() => setArmed(null)}>{armed === "reset" ? "really reset?" : "reset"}</button>
+        </nav>
+      </header>
+
+      <div className="console-workspace">
+        <section className="console-panel input-panel" aria-labelledby="input-heading">
+          <header className="panel-bar"><h1 id="input-heading">INPUT</h1><span>keys and clauses</span></header>
+          <div className="input-body">
+            <section className="console-section keys-section" aria-labelledby="keys-heading">
+              <header className="console-section-title"><h2 id="keys-heading">KEYS</h2><i></i><b>{rows.length}/{MAX_DIRECT_SCRIPT_KEYS}</b></header>
+              <div className="key-console-table">{rows.map((row, index) => {
+                const state = fieldState.get(row.id);
+                const visibleLabelError = row.label.trim() || row.publicKey.trim() ? state?.labelError : null;
+                const visiblePublicKeyError = row.publicKey.trim() ? state?.publicKeyError : null;
+                const visibleErrors = [
+                  visibleLabelError ? `label: ${visibleLabelError}` : null,
+                  visiblePublicKeyError ? `public key: ${visiblePublicKeyError}` : null,
+                ].filter((message): message is string => Boolean(message));
+                const errorId = `keyholder-${index + 1}-error`;
+                return <div className="key-console-row" key={row.id}>
+                  <span className="row-index">{String(index + 1).padStart(2, "0")}</span>
+                  <label><span className="sr-only">keyholder {index + 1} label</span><input value={row.label}
+                    onChange={(event) => updateRow(row.id, { label: event.target.value })} placeholder="label"
+                    maxLength={80} autoComplete="off" aria-invalid={Boolean(visibleLabelError)}
+                    aria-describedby={visibleErrors.length ? errorId : undefined} /></label>
+                  <label><span className="sr-only">keyholder {index + 1} compressed public key</span><input value={row.publicKey}
+                    onChange={(event) => updateRow(row.id, { publicKey: event.target.value.replace(/\s+/g, "") })}
+                    placeholder="02… or 03… + 64 hex" autoComplete="off" autoCapitalize="none" spellCheck={false}
+                    aria-invalid={Boolean(visiblePublicKeyError)} aria-describedby={visibleErrors.length ? errorId : undefined} /></label>
+                  <button type="button" className="remove-button" onClick={() => removeKeyRow(row.id)}
+                    aria-label={`remove ${row.label.trim() || `keyholder ${index + 1}`}`}
+                    aria-disabled={usedByBranch.has(row.id) || rows.length === 1}
+                    title={usedByBranch.has(row.id) ? "Remove this keyholder from every clause first" : rows.length === 1 ? "At least one keyholder row is required" : "Remove keyholder"}>×</button>
+                  {visibleErrors.length ? <p id={errorId} className="inline-error">{visibleErrors.join(" · ")}</p> : null}
+                </div>;
+              })}</div>
+              <button className="console-outline-action" type="button" onClick={addKeyRow} disabled={rows.length >= MAX_DIRECT_SCRIPT_KEYS}>[ + {rows.length >= MAX_DIRECT_SCRIPT_KEYS ? "key limit reached" : "add key"} ]</button>
+            </section>
+
+            <section className="console-section clauses-section" aria-labelledby="clauses-heading">
+              <header className="console-section-title"><h2 id="clauses-heading">CLAUSES</h2><i></i><b>{branches.length}/{MAX_DIRECT_SCRIPT_CLAUSES}</b></header>
+              <div className="clause-console-list">{branches.map((branch, index) => {
+                const locked = Boolean(branch.unlockDate);
+                const names = branch.keyRowIds.map((id) => rowById.get(id)?.label.trim() || "unnamed");
+                const branchSummary = `clause[${index + 1}] = ${names.length ? `${names.length === 1 ? 1 : branch.threshold} of { ${names.join(", ")} }` : "select keyholders"} @ ${branch.unlockDate ?? "now"}`;
+                return <article className={`clause-console-card${locked ? " is-delayed" : ""}`} key={branch.id}>
+                  <header>
+                    <strong>clause[{index + 1}]</strong>
+                    <span>{branchSummary}</span>
+                    <button type="button" className="remove-button" onClick={() => removeBranch(branch.id)} aria-label={`remove clause ${index + 1}`}>×</button>
+                  </header>
+                  <p className="clause-sentence">{clauseSentence(branch)}</p>
+                  <fieldset className="clause-key-picker"><legend>Keyholders in this clause</legend><div>{rows.map((row, rowIndex) => {
+                    const state = fieldState.get(row.id);
+                    const selected = branch.keyRowIds.includes(row.id);
+                    const invalid = Boolean(state?.labelError || state?.publicKeyError);
+                    return <button type="button" key={row.id} className={selected ? "is-selected" : ""}
+                      onClick={() => toggleKeyInBranch(branch.id, row.id)} disabled={invalid}
+                      aria-pressed={selected} title={selected ? "remove from this clause" : "add to this clause"}>
+                      <span aria-hidden="true">[{selected ? "x" : " "}]</span> {row.label.trim() || `keyholder ${rowIndex + 1}`}
+                    </button>;
+                  })}</div></fieldset>
+                  <div className="clause-settings">
+                    <fieldset className="signature-picker"><legend>k =</legend><div>{branch.keyRowIds.length
+                      ? branch.keyRowIds.map((_, thresholdIndex) => {
+                        const value = thresholdIndex + 1;
+                        return <button type="button" key={value} className={branch.threshold === value ? "is-selected" : ""}
+                          onClick={() => setThreshold(branch.id, value)} aria-pressed={branch.threshold === value}>{value}</button>;
+                      })
+                      : <span>—</span>}</div></fieldset>
+                    <fieldset className="effective-picker"><legend>opens</legend><div className="effective-row">
+                      <span className="segmented-control"><button type="button" className={!locked ? "is-selected" : ""} onClick={() => setImmediate(branch.id)} aria-pressed={!locked}>at once</button><button type="button" className={locked ? "is-selected" : ""} onClick={() => setDelayed(branch.id)} aria-pressed={locked}>from date</button></span>
+                      {branch.unlockDate ? <label><span className="sr-only">clause {index + 1} unlock date</span><input type="date"
+                        value={branch.unlockDate} min={futureMinimum} max="2106-02-07"
+                        onChange={(event) => updateBranch(branch.id, (current) => ({ ...current, unlockDate: event.target.value }))} /></label> : null}
+                    </div></fieldset>
+                  </div>
+                </article>;
+              })}</div>
+              {canAddClause ? <button className="console-outline-action" type="button" onClick={addSpendingPath}>[ + add clause ]</button> : null}
+              {feedback ? <p className="activity-line" role="status" aria-live="polite">{feedback}</p> : null}
+            </section>
           </div>
-        </header>
-
-        {hasDemoKey ? <div className="sheet-alert is-warning" role="alert"><strong>DEMO KEYS · DO NOT FUND</strong><span>These private keys are public knowledge. Address copy and JSON export are blocked.</span></div> : null}
-        {hasNonFutureDelay ? <div className="sheet-alert is-error" role="alert"><strong>LOCK DATE REQUIRES REVIEW</strong><span>A clause is already active or past. Exact artifacts remain visible; address copy and export are blocked.</span></div> : null}
-
-        <section className="sheet-section keyholder-section" aria-labelledby="keyholders-heading">
-          <header className="section-title"><span>§1</span><h2 id="keyholders-heading">KEYHOLDERS</h2><p>compressed public keys, entered by hand</p><i></i><b>{rows.length} of {MAX_DIRECT_SCRIPT_KEYS}</b></header>
-          <div className="key-table-head" aria-hidden="true"><span>NO</span><span>LABEL</span><span>PUBLIC KEY · secp256k1</span><span></span></div>
-          <div className="key-table">{rows.map((row, index) => {
-            const state = fieldState.get(row.id);
-            const visibleLabelError = row.label.trim() || row.publicKey.trim() ? state?.labelError : null;
-            const visiblePublicKeyError = row.publicKey.trim() ? state?.publicKeyError : null;
-            const visibleErrors = [
-              visibleLabelError ? `label: ${visibleLabelError}` : null,
-              visiblePublicKeyError ? `public key: ${visiblePublicKeyError}` : null,
-            ].filter((message): message is string => Boolean(message));
-            const errorId = `keyholder-${index + 1}-error`;
-            return <div className="keyholder-row" key={row.id}>
-              <span className="row-index">{String(index + 1).padStart(2, "0")}</span>
-              <label><span className="sr-only">keyholder {index + 1} label</span><input value={row.label}
-                onChange={(event) => updateRow(row.id, { label: event.target.value })} placeholder="label"
-                maxLength={80} autoComplete="off" aria-invalid={Boolean(visibleLabelError)}
-                aria-describedby={visibleErrors.length ? errorId : undefined} /></label>
-              <label><span className="sr-only">keyholder {index + 1} compressed public key</span><input value={row.publicKey}
-                onChange={(event) => updateRow(row.id, { publicKey: event.target.value.replace(/\s+/g, "") })}
-                placeholder="02… or 03… + 64 hex" autoComplete="off" autoCapitalize="none" spellCheck={false}
-                aria-invalid={Boolean(visiblePublicKeyError)} aria-describedby={visibleErrors.length ? errorId : undefined} /></label>
-              {visibleErrors.length ? <p id={errorId} className="is-error">{visibleErrors.join(" · ")}</p> : null}
-              <button type="button" className="remove-button" onClick={() => removeKeyRow(row.id)}
-                aria-label={`remove ${row.label.trim() || `keyholder ${index + 1}`}`} aria-disabled={usedByBranch.has(row.id)}>×</button>
-            </div>;
-          })}</div>
-          <button className="outline-action" type="button" onClick={addKeyRow} disabled={rows.length >= MAX_DIRECT_SCRIPT_KEYS}>+ {rows.length >= MAX_DIRECT_SCRIPT_KEYS ? "KEYHOLDER LIMIT REACHED" : "ADD KEYHOLDER"}</button>
         </section>
 
-        <section className="sheet-section clauses-section" aria-labelledby="clauses-heading">
-          <header className="section-title"><span>§2</span><h2 id="clauses-heading">SPENDING CLAUSES</h2><p>each clause becomes one explicit Script branch</p><i></i><b>{branches.length} of {MAX_DIRECT_SCRIPT_CLAUSES}</b></header>
-          <div className="clause-list">{branches.map((branch, index) => {
-            const locked = Boolean(branch.unlockDate);
-            return <article className={`clause${locked ? " is-delayed" : ""}`} key={branch.id}>
-              <header><span>2.{index + 1}</span><p>{clauseSentence(branch)}</p><button type="button" className="remove-button" onClick={() => removeBranch(branch.id)} aria-label={`remove clause ${index + 1}`}>×</button></header>
-              <div className="clause-controls">
-                <fieldset className="keyholder-picker"><legend>KEYHOLDERS IN THIS CLAUSE</legend><div>{rows.map((row, rowIndex) => {
-                  const state = fieldState.get(row.id);
-                  const selected = branch.keyRowIds.includes(row.id);
-                  const invalid = Boolean(state?.labelError || state?.publicKeyError);
-                  return <button type="button" key={row.id} className={selected ? "is-selected" : ""}
-                    onClick={() => toggleKeyInBranch(branch.id, row.id)} disabled={invalid}
-                    aria-pressed={selected} title={selected ? "remove from this clause" : "add to this clause"}>
-                    {row.label.trim() || `keyholder ${rowIndex + 1}`}
-                  </button>;
-                })}</div></fieldset>
-                <fieldset className="signature-picker"><legend>SIGNATURES</legend><div>{branch.keyRowIds.length
-                  ? branch.keyRowIds.map((_, thresholdIndex) => {
-                    const value = thresholdIndex + 1;
-                    return <button type="button" key={value} className={branch.threshold === value ? "is-selected" : ""}
-                      onClick={() => setThreshold(branch.id, value)} aria-pressed={branch.threshold === value}>{value}</button>;
-                  })
-                  : <span>—</span>}</div></fieldset>
-                <fieldset className="effective-picker"><legend>EFFECTIVE</legend><div className="effective-row">
-                  <span className="segmented-control"><button type="button" className={!locked ? "is-selected" : ""} onClick={() => setImmediate(branch.id)} aria-pressed={!locked}>AT ONCE</button><button type="button" className={locked ? "is-selected" : ""} onClick={() => setDelayed(branch.id)} aria-pressed={locked}>FROM DATE</button></span>
-                  {branch.unlockDate ? <label><span className="sr-only">clause {index + 1} unlock date</span><input type="date"
-                    value={branch.unlockDate} min={futureMinimum} max="2106-02-07"
-                    onChange={(event) => updateBranch(branch.id, (current) => ({ ...current, unlockDate: event.target.value }))} /></label> : null}
-                </div></fieldset>
-              </div>
-            </article>;
-          })}</div>
-          {canAddClause ? <button className="outline-action" type="button" onClick={addSpendingPath}>+ ADD CLAUSE</button> : null}
-          <p className="activity-line" role="status" aria-live="polite">{feedback ?? "Each clause is an alternative. Timelocks apply automatically to their clause."}</p>
-        </section>
+        <aside className="console-panel output-panel" aria-labelledby="output-heading">
+          <header className="panel-bar"><h2 id="output-heading">OUTPUT</h2><span>bitcoin script and address</span></header>
+          <div className="output-body">
+            {hasDemoKey ? <div className="console-alert is-warning" role="alert"><strong>DEMO KEYS · DO NOT FUND</strong><span>These private keys are public knowledge. Address copy and JSON export are blocked.</span></div> : null}
+            {hasNonFutureDelay ? <div className="console-alert is-error" role="alert"><strong>LOCK DATE REQUIRES REVIEW</strong><span>A clause is already active or past. Exact artifacts remain visible; address copy and export are blocked.</span></div> : null}
 
-        <section className="sheet-section artifacts-section" aria-labelledby="artifacts-heading">
-          <header className="section-title"><span>§3</span><h2 id="artifacts-heading">COMPILED ARTIFACTS</h2><i></i></header>
+            {live.message ? <div className="console-error" role="alert"><strong>ARTIFACTS WITHHELD</strong><p>{live.message}</p></div> : null}
+            {!live.compiled && !live.message ? <div className="console-awaiting"><strong>AWAITING POLICY</strong><span>Complete one clause to produce the Bitcoin Script and address.</span></div> : null}
 
-          {live.message ? <div className="error-sheet" role="alert"><strong>1 UNRESOLVED ITEM · NO ARTIFACTS ISSUED</strong><p>— {live.message}</p></div> : null}
-          {!live.compiled && !live.message ? <div className="awaiting-sheet"><strong>AWAITING A COMPLETE CLAUSE</strong><span>Select complete keyholders in §2 to compile the policy.</span></div> : null}
+            {live.compiled ? <div className="artifact-stack">
+              <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3></header><pre className="asm-code" aria-label="Formatted Bitcoin Script"><code>{formattedAsm}</code></pre></section>
+              <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
+                const value = event.currentTarget.value;
+                if (isUiNetwork(value)) setNetwork(value);
+              }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></header><p>{live.compiled.address}</p></section>
+            </div> : null}
 
-          {live.compiled ? <div className="artifact-stack">
-            <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3><CopyButton value={formattedAsm} label="Bitcoin Script ASM" /></header><pre className="asm-code" aria-label="Formatted Bitcoin Script"><code>{formattedAsm}</code></pre></section>
-            <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
-              const value = event.currentTarget.value;
-              if (isUiNetwork(value)) setNetwork(value);
-            }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><CopyButton value={live.compiled.address} label="P2WSH address" disabled={addressAndExportBlocked} /></header><p>{live.compiled.address}</p></section>
-            <div className="export-row"><button type="button" onClick={downloadPolicy} disabled={addressAndExportBlocked}>↓ DOWNLOAD POLICY JSON</button></div>
-          </div> : null}
-        </section>
+            <p className="local-note">Generated locally from public keys only. Nothing is signed, stored, or transmitted. Reproduce the script independently and rehearse every branch before funding.</p>
+          </div>
 
-        <footer className="sheet-footer">
-          <p>Generated locally from public keys only. Nothing is signed, stored, or transmitted. Reproduce the witness script and address independently, then rehearse every branch on {network} before funding.</p>
-        </footer>
-      </article>
+          <footer className="output-dock">
+            <CopyButton value={formattedAsm} label="Bitcoin Script ASM"
+              idleLabel="[ copy script ]" className="dock-button" disabled={!live.compiled} />
+            <CopyButton value={live.compiled?.address ?? ""} label="P2WSH address"
+              idleLabel="[ copy address ]" className="dock-button"
+              disabled={!live.compiled || addressAndExportBlocked} />
+            <button type="button" onClick={downloadPolicy}
+              disabled={!live.compiled || addressAndExportBlocked}>[ export json ]</button>
+          </footer>
+        </aside>
+      </div>
     </main>
   );
 }
