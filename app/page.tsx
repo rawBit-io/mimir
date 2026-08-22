@@ -28,6 +28,14 @@ type FieldState = {
   publicKeyError: string | null;
 };
 type LiveResult = { compiled: CompiledDirectScriptPolicy | null; message: string | null };
+type TimelineYearTick = {
+  year: number;
+  ratio: number;
+  edge: "start" | "middle" | "end";
+};
+
+const TIMELINE_CELLS = 34;
+const SECONDS_PER_DAY = 86_400;
 
 const DEMO_PUBLIC_KEYS = [
   "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
@@ -110,6 +118,43 @@ function readableDate(value: string | null): string {
 function naturalList(values: string[]): string {
   if (values.length < 2) return values[0] ?? "an unnamed keyholder";
   return `${values.slice(0, -1).join(", ")} and ${values.at(-1)}`;
+}
+
+function buildTimelineYearTicks(startUnix: number, endUnix: number): TimelineYearTick[] {
+  const startYear = new Date(startUnix * 1_000).getUTCFullYear();
+  const endYear = new Date(endUnix * 1_000).getUTCFullYear();
+  if (endUnix <= startUnix || startYear === endYear) {
+    return [{ year: startYear, ratio: 0, edge: "start" }];
+  }
+
+  const rawStep = Math.ceil((endYear - startYear) / 4);
+  const step = [1, 2, 5, 10, 20, 25, 50, 100].find((value) => value >= rawStep) ?? 100;
+  const firstInterior = Math.ceil((startYear + 1) / step) * step;
+  const candidates: TimelineYearTick[] = [];
+
+  for (let year = firstInterior; year < endYear; year += step) {
+    const unix = Date.UTC(year, 0, 1) / 1_000;
+    candidates.push({
+      year,
+      ratio: Math.min(1, Math.max(0, (unix - startUnix) / (endUnix - startUnix))),
+      edge: "middle",
+    });
+  }
+
+  const interior: TimelineYearTick[] = [];
+  let previousRatio = 0;
+  for (const tick of candidates) {
+    if (tick.ratio - previousRatio >= 0.16 && 1 - tick.ratio >= 0.16 && interior.length < 3) {
+      interior.push(tick);
+      previousRatio = tick.ratio;
+    }
+  }
+
+  return [
+    { year: startYear, ratio: 0, edge: "start" },
+    ...interior,
+    { year: endYear, ratio: 1, edge: "end" },
+  ];
 }
 
 function branchStarted(branch: PolicyBranch): boolean {
@@ -221,14 +266,10 @@ function CopyButton({
   value,
   label,
   disabled = false,
-  idleLabel = "copy",
-  className = "",
 }: {
   value: string;
   label: string;
   disabled?: boolean;
-  idleLabel?: string;
-  className?: string;
 }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   async function copy() {
@@ -237,9 +278,21 @@ function CopyButton({
     catch { setState("failed"); }
     window.setTimeout(() => setState("idle"), 1_500);
   }
+  const actionLabel = state === "copied"
+    ? `${label} copied`
+    : state === "failed"
+      ? `${label} could not be copied`
+      : `Copy ${label}`;
   return <>
-    <button className={`copy-button${className ? ` ${className}` : ""}`} type="button" onClick={copy} disabled={disabled} aria-label={`copy ${label}`}>
-      {state === "copied" ? "copied" : state === "failed" ? "failed" : idleLabel}
+    <button className={`copy-button is-${state}`} type="button" onClick={copy} disabled={disabled}
+      aria-label={`Copy ${label}`} title={actionLabel}>
+      {state === "copied" ? <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+        <path d="m5 12.5 4 4L19 7" />
+      </svg> : state === "failed" ? <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+        <path d="M6 6 18 18M18 6 6 18" />
+      </svg> : <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+        <path d="M8 8h11v12H8zM5 16H4V4h11v1" />
+      </svg>}
     </button>
     <span className="sr-only" role="status" aria-live="polite">
       {state === "copied" ? `${label} copied.` : state === "failed" ? `${label} could not be copied.` : ""}
@@ -335,6 +388,41 @@ export default function Home() {
   const hasNonFutureDelay = useMemo(() => branches.some((branch) =>
     branch.unlockDate !== null && branch.unlockDate < futureMinimum), [branches, futureMinimum]);
   const addressAndExportBlocked = hasDemoKey || hasNonFutureDelay;
+  const { timelineRows, timelineYearTicks } = useMemo(() => {
+    const completeBranches = branches.filter(branchComplete);
+    const todayUnix = (Date.parse(`${futureMinimum}T00:00:00Z`) / 1_000) - SECONDS_PER_DAY;
+    const unlockUnix = completeBranches.map((branch) => {
+      if (!branch.unlockDate) return null;
+      try { return unixFromDirectScriptDate(branch.unlockDate); }
+      catch { return null; }
+    });
+    const datedUnlocks = unlockUnix.filter((value): value is number => value !== null);
+    const axisEndUnix = Math.max(todayUnix, ...datedUnlocks);
+    const finalUnix = Math.max(todayUnix + SECONDS_PER_DAY, ...datedUnlocks);
+    const duration = finalUnix - todayUnix;
+
+    const lanes = completeBranches.map((branch, index) => {
+      const lockUnix = unlockUnix[index];
+      const waitRatio = lockUnix === null ? 0 : Math.min(1, Math.max(0, (lockUnix - todayUnix) / duration));
+      const selected = new Set(branch.keyRowIds);
+      const keyNames = branch.keyRowIds.map((id) => rowById.get(id)?.label.trim() || "unnamed keyholder");
+      return {
+        id: branch.id,
+        tag: `C${index + 1}`,
+        delayed: lockUnix !== null,
+        unlockDate: branch.unlockDate || null,
+        threshold: branch.keyRowIds.length === 1 ? 1 : branch.threshold,
+        keyCount: branch.keyRowIds.length,
+        keyNames,
+        slots: rows.map((row, keyIndex) => selected.has(row.id) ? String(keyIndex + 1) : "·"),
+        openFrom: Math.round(waitRatio * TIMELINE_CELLS),
+      };
+    });
+    return {
+      timelineRows: lanes,
+      timelineYearTicks: buildTimelineYearTicks(todayUnix, axisEndUnix),
+    };
+  }, [branches, futureMinimum, rowById, rows]);
 
   function updateRow(id: string, patch: Partial<Omit<KeyRow, "id">>) {
     setRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
@@ -592,23 +680,65 @@ export default function Home() {
             {live.message ? <div className="console-error" role="alert"><strong>ARTIFACTS WITHHELD</strong><p>{live.message}</p></div> : null}
             {!live.compiled && !live.message ? <div className="console-awaiting"><strong>AWAITING POLICY</strong><span>Complete one clause to produce the Bitcoin Script and address.</span></div> : null}
 
-            {live.compiled ? <div className="artifact-stack">
-              <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3></header><pre className="asm-code" aria-label="Formatted Bitcoin Script"><code>{formattedAsm}</code></pre></section>
-              <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
-                const value = event.currentTarget.value;
-                if (isUiNetwork(value)) setNetwork(value);
-              }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label></header><p>{live.compiled.address}</p></section>
-            </div> : null}
+            {live.compiled ? <>
+              <section className="timeline" aria-labelledby="timeline-heading">
+                <h3 id="timeline-heading">TIMELINE</h3>
+                <div className="timeline-rows">{timelineRows.map((lane) => <div
+                  className={`timeline-row${lane.delayed ? " is-delayed" : " is-immediate"}`}
+                  key={lane.id}
+                  aria-label={`${lane.tag}: ${lane.keyNames.join(", ")}; ${lane.unlockDate ? `from ${lane.unlockDate}` : "available now"}; ${lane.threshold} of ${lane.keyCount}`}
+                >
+                  <span className="timeline-tag">{lane.tag}</span>
+                  <span className="timeline-keys" aria-hidden="true">{lane.slots.map((slot, slotIndex) => <span
+                    className={slot === "·" ? "is-empty" : ""}
+                    key={slotIndex}
+                  >{slot}</span>)}</span>
+                  <span className="timeline-track" aria-hidden="true">{Array.from({ length: TIMELINE_CELLS }, (_, cellIndex) => <span
+                    className={`timeline-cell${cellIndex < lane.openFrom ? " is-dormant" : " is-open"}`}
+                    key={cellIndex}
+                  ></span>)}</span>
+                  <span className="timeline-summary">
+                    {lane.unlockDate ? <time dateTime={lane.unlockDate}>{lane.unlockDate}</time> : <span>now</span>}
+                    <span aria-hidden="true"> · </span>
+                    <b>{lane.threshold}/{lane.keyCount}</b>
+                  </span>
+                </div>)}</div>
+                <div
+                  className="timeline-axis-row"
+                  role="img"
+                  aria-label={`Timeline years ${timelineYearTicks[0]?.year ?? ""} through ${timelineYearTicks.at(-1)?.year ?? ""}`}
+                >
+                  <span className="timeline-axis-clause-space" aria-hidden="true"></span>
+                  <span className="timeline-axis-key-space" aria-hidden="true">{rows.map((row) => <i key={row.id}></i>)}</span>
+                  <span className="timeline-axis" aria-hidden="true">{timelineYearTicks.map((tick) => <span
+                    className={`timeline-year is-${tick.edge}`}
+                    key={`${tick.year}-${tick.edge}`}
+                    style={{ left: `${tick.ratio * 100}%` }}
+                  ><b>{tick.year}</b></span>)}</span>
+                  <span className="timeline-axis-summary-space" aria-hidden="true"></span>
+                </div>
+                <div className="timeline-legend" aria-label="Timeline keyholder legend">{rows.map((row, index) => <span key={row.id}>
+                  <b>{index + 1}</b> {row.label.trim() || `keyholder ${index + 1}`}
+                </span>)}</div>
+              </section>
+
+              <div className="artifact-stack">
+                <section className="artifact-block address-artifact"><header><h3>P2WSH ADDRESS</h3><label className="network-select"><span className="sr-only">Bitcoin network</span><select aria-label="Bitcoin network" value={network} onChange={(event) => {
+                  const value = event.currentTarget.value;
+                  if (isUiNetwork(value)) setNetwork(value);
+                }}>{NETWORK_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                  <CopyButton value={live.compiled.address} label="P2WSH address" disabled={addressAndExportBlocked} />
+                </header><p>{live.compiled.address}</p></section>
+                <section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM</h3>
+                  <CopyButton value={formattedAsm} label="Bitcoin Script ASM" />
+                </header><pre className="asm-code" aria-label="Formatted Bitcoin Script"><code>{formattedAsm}</code></pre></section>
+              </div>
+            </> : null}
 
             <p className="local-note">Generated locally from public keys only. Nothing is signed, stored, or transmitted. Reproduce the script independently and rehearse every branch before funding.</p>
           </div>
 
           <footer className="output-dock">
-            <CopyButton value={formattedAsm} label="Bitcoin Script ASM"
-              idleLabel="[ copy script ]" className="dock-button" disabled={!live.compiled} />
-            <CopyButton value={live.compiled?.address ?? ""} label="P2WSH address"
-              idleLabel="[ copy address ]" className="dock-button"
-              disabled={!live.compiled || addressAndExportBlocked} />
             <button type="button" onClick={downloadPolicy}
               disabled={!live.compiled || addressAndExportBlocked}>[ export json ]</button>
           </footer>

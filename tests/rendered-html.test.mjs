@@ -48,22 +48,22 @@ test("server-renders the restrained console interface", async () => {
   assert.match(html, /console-actions.*?>.*?demo.*?<\/button>/is);
   assert.match(html, /console-actions.*?>.*?reset.*?<\/button>/is);
   assert.match(html, /AWAITING POLICY/);
-  assert.match(html, />\[ copy script \]<\/button>/);
-  assert.match(html, />\[ copy address \]<\/button>/);
+  assert.doesNotMatch(html, /\[ copy script \]|\[ copy address \]/i);
   assert.match(html, />\[ export json \]<\/button>/);
   assert.match(html, /http:\/\/localhost\/og-v2\.png/);
   assert.match(html, /noindex/);
   assert.match(html, /connect-src &#x27;none&#x27;/);
   assert.doesNotMatch(html, /COMPRESSED PUBLIC KEY · secp256k1|>LABEL<|>AND<|>OR<|MINISCRIPT|click or drag|DROP KEY/i);
-  assert.doesNotMatch(html, /SESSION COMPILED|validate keys|build branches|TIMELINE|SPENDING EACH BRANCH|sigops|VERIFICATION|OPERATING NOTICES/i);
+  assert.doesNotMatch(html, /SESSION COMPILED|validate keys|build branches|SPENDING EACH BRANCH|sigops|VERIFICATION|OPERATING NOTICES/i);
   assert.doesNotMatch(html, />MAINNET<\/button>|>TESTNET<\/button>|>SIGNET<\/button>|>REGTEST<\/button>/i);
   assert.doesNotMatch(html, /SPECIFICATION SHEET|SHEET 1 OF 1|KEYRING|COMPOSE PATH|pre-commit|\[ ADD PATH \]|datetime-local|fingerprint|xpub|lucide/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
 test("source keeps the current Direct Script workflow behind the console ui without reference-only features", async () => {
-  const [page, layout, packageJson] = await Promise.all([
+  const [page, globals, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
@@ -96,18 +96,56 @@ test("source keeps the current Direct Script workflow behind the console ui with
   assert.match(page, /Formatted Bitcoin Script/);
   assert.match(page, /formatBitcoinScript/);
   assert.doesNotMatch(page, /asmMeaning|decodeScriptNumber/);
+  assert.match(page, /type TimelineYearTick = \{/);
+  assert.match(page, /function buildTimelineYearTicks\(startUnix: number, endUnix: number\): TimelineYearTick\[\] \{/);
+  assert.match(page, /new Date\(startUnix \* 1_000\)\.getUTCFullYear\(\)/);
+  assert.match(page, /Date\.UTC\(year, 0, 1\) \/ 1_000/);
+  assert.match(page, /const \{ timelineRows, timelineYearTicks \} = useMemo\(\(\) => \{/);
+  assert.match(page, /const completeBranches = branches\.filter\(branchComplete\)/);
+  assert.match(page, /const datedUnlocks = unlockUnix\.filter/);
+  assert.match(page, /const axisEndUnix = Math\.max\(todayUnix, \.\.\.datedUnlocks\)/);
+  assert.match(page, /const finalUnix = Math\.max\(todayUnix \+ SECONDS_PER_DAY, \.\.\.datedUnlocks\)/);
+  assert.match(page, /timelineYearTicks: buildTimelineYearTicks\(todayUnix, axisEndUnix\)/);
+  assert.match(page, /<section className="timeline" aria-labelledby="timeline-heading">/);
+  assert.match(page, /<h3 id="timeline-heading">TIMELINE<\/h3>/);
+  assert.match(page, /timelineRows\.map\(\(lane\) =>/);
+  assert.match(page, /aria-label=\{`\$\{lane\.tag\}: \$\{lane\.keyNames\.join\(", "\)\};/);
+  assert.match(page, /className="timeline-axis-row"\s+role="img"\s+aria-label=\{`Timeline years /);
+  assert.match(page, /className="timeline-axis-clause-space" aria-hidden="true"/);
+  assert.match(page, /className="timeline-axis-key-space" aria-hidden="true">\{rows\.map/);
+  assert.match(page, /className="timeline-axis" aria-hidden="true">\{timelineYearTicks\.map/);
+  assert.match(page, /className=\{`timeline-year is-\$\{tick\.edge\}`\}/);
+  assert.match(page, /style=\{\{ left: `\$\{tick\.ratio \* 100\}%` \}\}/);
+  assert.match(page, /<b>\{tick\.year\}<\/b>/);
+  assert.match(page, /className="timeline-axis-summary-space" aria-hidden="true"/);
+  assert.match(page, /<div className="timeline-legend" aria-label="Timeline keyholder legend">\{rows\.map/);
+  assert.match(globals, /\.timeline-axis-row\s*\{[\s\S]*?grid-template-columns: 26px auto minmax\(50px, 1fr\) 96px;[\s\S]*?\}/);
+  assert.match(globals, /\.timeline-axis\s*\{[\s\S]*?position: relative;[\s\S]*?border-top: 1px solid var\(--rule-soft\);[\s\S]*?\}/);
+  assert.match(globals, /\.timeline-year\.is-start b \{ transform: none; \}/);
+  assert.match(globals, /\.timeline-year\.is-end b \{ transform: translateX\(-100%\); \}/);
+  assert.match(globals, /@media \(max-width: 460px\) \{[\s\S]*?\.timeline-axis-key-space,\s*\.timeline-axis-summary-space \{ display: none; \}[\s\S]*?\.timeline-axis \{ grid-column: 2 \/ 4; \}/);
+  assert.match(globals, /\.artifact-block pre\.asm-code\s*\{[\s\S]*?background: var\(--panel-soft\);[\s\S]*?color: var\(--text\);[\s\S]*?\}/);
+  assert.doesNotMatch(globals, /--code(?:-text)?:/);
+  assert.match(page, /const actionLabel = state === "copied"[\s\S]*?`\$\{label\} copied`[\s\S]*?state === "failed"[\s\S]*?`\$\{label\} could not be copied`[\s\S]*?`Copy \$\{label\}`/);
+  assert.match(page, /aria-label=\{`Copy \$\{label\}`\} title=\{actionLabel\}/);
+  assert.equal(page.match(/<svg aria-hidden="true" focusable="false"/g)?.length, 3);
+  assert.match(page, /<span className="sr-only" role="status" aria-live="polite">/);
+  assert.match(page, /state === "copied" \? `\$\{label\} copied\.` : state === "failed" \? `\$\{label\} could not be copied\.`/);
+  assert.match(page, /<section className="artifact-block address-artifact"><header>[\s\S]*?<CopyButton value=\{live\.compiled\.address\} label="P2WSH address" disabled=\{addressAndExportBlocked\} \/>[\s\S]*?<\/header><p>/);
+  assert.match(page, /<section className="artifact-block asm-artifact"><header><h3>BITCOIN SCRIPT · ASM<\/h3>[\s\S]*?<CopyButton value=\{formattedAsm\} label="Bitcoin Script ASM" \/>[\s\S]*?<\/header><pre/);
+  assert.match(globals, /\.copy-button\s*\{[\s\S]*?width: 30px;[\s\S]*?height: 30px;[\s\S]*?place-items: center;[\s\S]*?\}/);
+  assert.match(globals, /\.copy-button svg\s*\{[\s\S]*?stroke: currentColor;[\s\S]*?\}/);
+  assert.match(globals, /\.copy-button\.is-copied \{[\s\S]*?var\(--green-soft\)/);
+  assert.match(globals, /\.copy-button\.is-failed \{[\s\S]*?var\(--red-soft\)/);
   assert.match(page, /DEMO KEYS · DO NOT FUND/);
   assert.match(page, /Address copy and JSON export are blocked/);
-  assert.equal(
-    page.match(/disabled=\{!live\.compiled \|\| addressAndExportBlocked\}/g)?.length,
-    2,
-  );
-  assert.match(page, /idleLabel="\[ copy script \]"/);
-  assert.match(page, /idleLabel="\[ copy address \]"/);
-  assert.match(page, />\[ export json \]<\/button>/);
+  assert.match(page, /<CopyButton value=\{live\.compiled\.address\} label="P2WSH address" disabled=\{addressAndExportBlocked\} \/>/);
+  assert.equal(page.match(/disabled=\{!live\.compiled \|\| addressAndExportBlocked\}/g)?.length, 1);
+  assert.doesNotMatch(page, /idleLabel=|dock-button|\[ copy script \]|\[ copy address \]/i);
+  assert.match(page, /<footer className="output-dock">\s*<button[\s\S]*?>\[ export json \]<\/button>\s*<\/footer>/);
   assert.match(page, /<select aria-label="Bitcoin network"/);
   assert.doesNotMatch(page, />STATE<|>REVISION<|>TEMPLATE<|>STATUS<|REVIEWED BY|REHEARSED ON|manifest sha256/);
-  assert.doesNotMatch(page, /verification-summary|verification-grid|VERIFICATION DETAILS|OPERATING NOTICES|SESSION COMPILED|validate keys|build branches|TIMELINE|SPENDING EACH BRANCH|sigops|script_bytes|op_count/i);
+  assert.doesNotMatch(page, /verification-summary|verification-grid|VERIFICATION DETAILS|OPERATING NOTICES|SESSION COMPILED|validate keys|build branches|SPENDING EACH BRANCH|sigops|script_bytes|op_count/i);
   assert.doesNotMatch(page, /witness table|selector ↑/i);
   assert.match(page, /direct-script-policy/);
   assert.match(page, /compileDirectScriptPolicy/);
