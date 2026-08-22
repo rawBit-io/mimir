@@ -80,7 +80,9 @@ test("source keeps the current Direct Script workflow behind the console ui with
   assert.doesNotMatch(page, /COMPRESSED PUBLIC KEY · secp256k1|key-console-head|>LABEL</);
   assert.match(page, /key limit reached" : "add key"/i);
   assert.match(page, /\[ \+ add clause \]/i);
-  assert.match(page, /`clause\[\$\{index \+ 1\}\] = \$\{.*?\} @ \$\{branch\.unlockDate \?\? "now"\}`/s);
+  assert.match(page, /const delayed = branch\.unlockDate !== null/);
+  assert.match(page, /const unlockSummary = branch\.unlockDate === null \? "now" : branch\.unlockDate \|\| "select date"/);
+  assert.match(page, /`clause\[\$\{index \+ 1\}\] = \$\{.*?\} @ \$\{unlockSummary\}`/s);
   assert.match(page, /<legend>k =<\/legend>/);
   assert.match(page, /<legend>opens<\/legend>/);
   assert.match(page, />at once<\/button>/);
@@ -89,6 +91,16 @@ test("source keeps the current Direct Script workflow behind the console ui with
   assert.match(page, /setThreshold/);
   assert.match(page, /removeKeyRow/);
   assert.match(page, /removeBranch/);
+  assert.match(page, /return branch\.signingMode !== null && branch\.keyRowIds\.length > 0 && branch\.unlockDate !== ""/);
+  assert.match(page, /if \(branch\.unlockDate !== null\) unixFromDirectScriptDate\(branch\.unlockDate\)/);
+  assert.match(page, /unlock_unix: branch\.unlockDate === null \? null : unixFromDirectScriptDate\(branch\.unlockDate\)/);
+  assert.match(page, /if \(branch\.unlockDate === null\) return .*?may spend at any time\.`/);
+  assert.match(page, /if \(branch\.unlockDate === ""\) return "Choose an unlock date before this clause can be compiled\."/);
+  assert.match(page, /function setImmediate\(branchId: string\) \{[\s\S]*?unlockDate: null/);
+  assert.match(page, /function setDelayed\(branchId: string\) \{[\s\S]*?unlockDate: branch\.unlockDate \?\? defaultUnlockDate\(\)/);
+  assert.match(page, /\{delayed \? <label>[\s\S]*?<input type="date"[\s\S]*?value=\{branch\.unlockDate \?\? ""\}[\s\S]*?aria-invalid=\{branch\.unlockDate === ""\}/);
+  assert.doesNotMatch(page, /const (?:delayed|locked) = Boolean\(branch\.unlockDate\)/);
+  assert.doesNotMatch(page, /unlock_unix: branch\.unlockDate \? unixFromDirectScriptDate\(branch\.unlockDate\) : null/);
   assert.doesNotMatch(page, /andSlot|addOrBranch|\["and", "AND"\]|\["or", "OR"\]/);
   assert.match(page, /P2WSH ADDRESS/);
   assert.doesNotMatch(page, /OUTPUT ARTIFACT|Bitcoin Core funding command belongs to the next workflow step/);

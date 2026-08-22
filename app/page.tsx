@@ -162,7 +162,7 @@ function branchStarted(branch: PolicyBranch): boolean {
 }
 
 function branchComplete(branch: PolicyBranch): boolean {
-  return branch.signingMode !== null && branch.keyRowIds.length > 0;
+  return branch.signingMode !== null && branch.keyRowIds.length > 0 && branch.unlockDate !== "";
 }
 
 function validateRows(rows: KeyRow[]): Map<string, FieldState> {
@@ -209,7 +209,7 @@ function compileTree(rows: KeyRow[], branches: PolicyBranch[], network: UiNetwor
       if (branch.threshold < 1 || branch.threshold > branch.keyRowIds.length) {
         throw new Error(`clause 2.${index + 1} has an invalid signature threshold`);
       }
-      if (branch.unlockDate) unixFromDirectScriptDate(branch.unlockDate);
+      if (branch.unlockDate !== null) unixFromDirectScriptDate(branch.unlockDate);
     });
 
     const usedIds = [...new Set(active.flatMap((branch) => branch.keyRowIds))];
@@ -253,7 +253,7 @@ function compileTree(rows: KeyRow[], branches: PolicyBranch[], network: UiNetwor
           return id;
         }),
         threshold: branch.keyRowIds.length === 1 ? 1 : branch.threshold,
-        unlock_unix: branch.unlockDate ? unixFromDirectScriptDate(branch.unlockDate) : null,
+        unlock_unix: branch.unlockDate === null ? null : unixFromDirectScriptDate(branch.unlockDate),
       })),
     };
     return { compiled: compileDirectScriptPolicy(request), message: null };
@@ -386,7 +386,7 @@ export default function Home() {
   const hasDemoKey = useMemo(() => rows.some((row) =>
     DEMO_PUBLIC_KEYS.some((key) => key === row.publicKey.trim().toLowerCase())), [rows]);
   const hasNonFutureDelay = useMemo(() => branches.some((branch) =>
-    branch.unlockDate !== null && branch.unlockDate < futureMinimum), [branches, futureMinimum]);
+    branch.unlockDate !== null && branch.unlockDate !== "" && branch.unlockDate < futureMinimum), [branches, futureMinimum]);
   const addressAndExportBlocked = hasDemoKey || hasNonFutureDelay;
   const { timelineRows, timelineYearTicks } = useMemo(() => {
     const completeBranches = branches.filter(branchComplete);
@@ -569,7 +569,8 @@ export default function Home() {
     const names = branch.keyRowIds.map((id) => rowById.get(id)?.label.trim() || "an unnamed keyholder");
     if (names.length === 0) return "No keyholders are selected yet, so this clause cannot be compiled.";
     const who = names.length === 1 ? names[0] : `any ${branch.threshold} of ${naturalList(names)}`;
-    if (!branch.unlockDate) return `${who.charAt(0).toUpperCase()}${who.slice(1)} may spend at any time.`;
+    if (branch.unlockDate === null) return `${who.charAt(0).toUpperCase()}${who.slice(1)} may spend at any time.`;
+    if (branch.unlockDate === "") return "Choose an unlock date before this clause can be compiled.";
     return `From ${readableDate(branch.unlockDate)} onward, ${who} may spend.`;
   }
 
@@ -628,10 +629,11 @@ export default function Home() {
             <section className="console-section clauses-section" aria-labelledby="clauses-heading">
               <header className="console-section-title"><h2 id="clauses-heading">CLAUSES</h2><i></i><b>{branches.length}/{MAX_DIRECT_SCRIPT_CLAUSES}</b></header>
               <div className="clause-console-list">{branches.map((branch, index) => {
-                const locked = Boolean(branch.unlockDate);
+                const delayed = branch.unlockDate !== null;
                 const names = branch.keyRowIds.map((id) => rowById.get(id)?.label.trim() || "unnamed");
-                const branchSummary = `clause[${index + 1}] = ${names.length ? `${names.length === 1 ? 1 : branch.threshold} of { ${names.join(", ")} }` : "select keyholders"} @ ${branch.unlockDate ?? "now"}`;
-                return <article className={`clause-console-card${locked ? " is-delayed" : ""}`} key={branch.id}>
+                const unlockSummary = branch.unlockDate === null ? "now" : branch.unlockDate || "select date";
+                const branchSummary = `clause[${index + 1}] = ${names.length ? `${names.length === 1 ? 1 : branch.threshold} of { ${names.join(", ")} }` : "select keyholders"} @ ${unlockSummary}`;
+                return <article className={`clause-console-card${delayed ? " is-delayed" : ""}`} key={branch.id}>
                   <header>
                     <strong>clause[{index + 1}]</strong>
                     <span>{branchSummary}</span>
@@ -657,9 +659,9 @@ export default function Home() {
                       })
                       : <span>—</span>}</div></fieldset>
                     <fieldset className="effective-picker"><legend>opens</legend><div className="effective-row">
-                      <span className="segmented-control"><button type="button" className={!locked ? "is-selected" : ""} onClick={() => setImmediate(branch.id)} aria-pressed={!locked}>at once</button><button type="button" className={locked ? "is-selected" : ""} onClick={() => setDelayed(branch.id)} aria-pressed={locked}>from date</button></span>
-                      {branch.unlockDate ? <label><span className="sr-only">clause {index + 1} unlock date</span><input type="date"
-                        value={branch.unlockDate} min={futureMinimum} max="2106-02-07"
+                      <span className="segmented-control"><button type="button" className={!delayed ? "is-selected" : ""} onClick={() => setImmediate(branch.id)} aria-pressed={!delayed}>at once</button><button type="button" className={delayed ? "is-selected" : ""} onClick={() => setDelayed(branch.id)} aria-pressed={delayed}>from date</button></span>
+                      {delayed ? <label><span className="sr-only">clause {index + 1} unlock date</span><input type="date"
+                        value={branch.unlockDate ?? ""} min={futureMinimum} max="2106-02-07" aria-invalid={branch.unlockDate === ""}
                         onChange={(event) => updateBranch(branch.id, (current) => ({ ...current, unlockDate: event.target.value }))} /></label> : null}
                     </div></fieldset>
                   </div>
